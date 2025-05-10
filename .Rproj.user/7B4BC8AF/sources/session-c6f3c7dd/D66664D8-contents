@@ -1,0 +1,39 @@
+create_result_df <- function(result_list_name, col_names, row_names){
+  result_list <- get(result_list_name)
+  result_df <- data.frame()
+  for(col in col_names){
+    # Extract p-value
+    if(col == 'p0_01'){
+      p <- 0.01
+    } else if(col == 'p0_05'){
+      p <- 0.05
+    } else if(col == 'p0_1'){
+      p <- 0.1
+    } else {
+      p <- NA
+    }
+    for(row in row_names){
+      col_n <- ifelse(row == 'simple', col, paste0(col, '_inter'))
+
+      result_df[row, col] <- round(mean(result_list[[row]][[col_n]]), digits = 4)
+      
+      model <- lm(result_list[[row]][[col_n]]~1)
+      test_rst <- linearHypothesis(model, c(paste0('(Intercept)=', p)))
+      result_df[paste0(row, '_p'), col] <- round(test_rst$'Pr(>F)'[2], digits = 4)
+    }
+  }
+  return(result_df)
+}
+
+result_size_df <- create_result_df(result_list = 'result_size',
+                                   col_names = c('p0_01', 'p0_05', 'p0_1'),
+                                   row_names = c('simple', 'var'))
+result_power_df <- create_result_df(result_list = 'result_power',
+                                   col_names = c('p0_01', 'p0_05', 'p0_1'),
+                                   row_names = c('simple', 'var'))
+
+# colnames(result_size_df) <- c('p=0.01', 'p=0.05', 'p=0.1')
+# colnames(result_power_df) <- c('p=0.01', 'p=0.05', 'p=0.1')
+# rownames(result_size_df) <- c('Rejection proportion: Intercept', '1. p-value of H0: Rejection proportion=p', 'Rejection proportion: Intercept & Variance(t-1)', '2. p value of H0: Rejection proportion=p')
+# rownames(result_power_df) <- c('Rejection proportion: Intercept', '1. p-value of H0: Rejection proportion=p', 'Rejection proportion: Intercept & Variance(t-1)', '2. p value of H0: Rejection proportion=p')
+

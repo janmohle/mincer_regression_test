@@ -1,0 +1,300 @@
+####################################################################
+################### Function calculates VaR and ES #################
+####################################################################
+VaR_ES_forecast <- function(data_zoo,
+                            var_spec,
+                            mean_spec,
+                            dist_spec,
+                            tolerance_lvl){
+  
+  # Store last date
+  last_date <- tail(index(data_zoo), 1)
+  
+  # GARCH Specification
+  garchspec <- ugarchspec(variance.model = var_spec,
+                          mean.model = mean_spec,
+                          distribution.model = dist_spec)
+  
+  # Fitting GARCH model
+  garchfit <- tryCatch(
+    {
+      ugarchfit(spec = garchspec,
+                data = data_zoo,
+                solver = 'hybrid')
+    }, error = function(e){
+      return(NA)
+    }
+  )
+  
+  if(suppressWarnings(!is.na(garchfit))){
+    
+    # Extracting coefficients
+    coef_fit <- coef(garchfit)
+    
+    # Extracting variance from fit
+    variance_t_min_1 <- tail(sigma(garchfit), 1) ^ 2
+    
+    # Extracting last residual from fit
+    residual_t_min_1 <- tail(residuals(garchfit), 1)
+    
+    # Extracting skewness, shape and lambda parameter (if not prevalent, NA gets assigned)
+    skew <- ifelse('skew' %in% names(coef_fit),
+                   coef_fit['skew'],
+                   NA)
+    shape <- ifelse('shape' %in% names(coef_fit),
+                    coef_fit['shape'],
+                    NA)
+    lambda <- ifelse('ghlambda' %in% names(coef_fit),
+                     coef_fit['ghlambda'],
+                     NA)
+    
+    # Forecasting
+    garchforecast <- ugarchforecast(fitORspec = garchfit,
+                                    n.ahead = 1)
+    
+    # Extracting mu and sigma
+    mu <- fitted(garchforecast)
+    sigma <- sigma(garchforecast)
+    
+    # Function returns pth quantile of current distribution
+    pth_quantile <- function(p) {
+      q <- qdist(distribution = dist_spec,
+                 p = p,
+                 skew = skew,
+                 shape = shape,
+                 lambda = lambda)
+      return(q)
+    }
+    
+    # Calculate VaR
+    VaR <- mu + sigma * pth_quantile(p = tolerance_lvl)
+    
+    # Calculate ES
+    integrated <- integrate(pth_quantile,
+                            lower = 0,
+                            upper = tolerance_lvl)
+    integrated_value <- integrated[['value']]
+    ES <- mu + sigma / tolerance_lvl * integrated_value
+    
+    # Return results
+    results <- data.frame(last_date = last_date,
+                          sigma = as.double(sigma),
+                          variance = as.double(sigma^2),
+                          variance_t_min_1 = as.double(variance_t_min_1),
+                          residual_t_min_1 = as.double(residual_t_min_1),
+                          residual_t_min_1_quadr = as.double(residual_t_min_1)^2,
+                          VaR = as.double(VaR),
+                          ES = as.double(ES))
+  } else {
+    results <- data.frame(last_date = last_date,
+                          sigma = NA,
+                          variance = NA,
+                          variance_t_min_1 = NA,
+                          residual_t_min_1 = NA,
+                          residual_t_min_1_quadr = NA,
+                          VaR = NA,
+                          ES = NA)
+  }
+  
+  results_zoo <- zoo(results[, -1], order.by = results$last_date)
+  return(results_zoo)
+}
+
+#############################################################################
+################### Parallel estimation Loop ################################
+#############################################################################
+estimation_loop_par <- function(n_loop,
+                                est_window,
+                                oos_window,
+                                tolerance_lvl,
+                                var_spec_sim,
+                                mean_spec_sim,
+                                dist_spec_sim,
+                                omega,
+                                alpha1,
+                                beta1,
+                                eta11,
+                                var_spec_est,
+                                mean_spec_est,
+                                dist_spec_est,
+                                cores,
+                                white_adjust){
+  
+  # Register cores
+  registerDoParallel(cores = cores)
+  
+  # Invoke empty result list
+  result_lst <- list()
+  
+  # Estimation loop
+  result_foreach <- foreach(i=1:n_loop) %dopar% {
+    
+    # Only displayed if cores=1
+    cat(paste0('Iteration Nr.: ', i, '\n'))
+    
+    # Simulate garch process
+    garchspec_sim <- ugarchspec(variance.model = var_spec_sim,
+                                mean.model = mean_spec_sim,
+                                distribution.model = dist_spec_sim,
+                                fixed.pars = list(mu = 0,
+                                                  omega = omega,
+                                                  alpha1 = alpha1,
+                                                  beta1 = beta1,
+                                                  eta11 = eta11))
+    
+    garchsimlation <- ugarchpath(spec = garchspec_sim,
+                                 n.sim = est_window + oos_window,
+                                 n.start = 0,
+                                 m.sim = 1)
+    
+    # Create zoo object of simulation
+    garchsimlation_df <- as.data.frame(garchsimlation@path$seriesSim)
+    garchsimlation_df <- garchsimlation_df %>%
+      mutate(Date = as.Date('2000-01-01') + 1:nrow(garchsimlation_df)) %>%
+      rename(Return = V1)
+    garchsimulation_zoo <- zoo(garchsimlation_df$Return, garchsimlation_df$Date)
+    
+    # Calculate GARCH model
+    rolling_VaR_ES <- rollapply(garchsimulation_zoo,
+                                width = est_window,
+                                FUN = function(x) VaR_ES_forecast(data_zoo = x,
+                                                                  var_spec = var_spec_est,
+                                                                  mean_spec = mean_spec_est,
+                                                                  dist_spec = dist_spec_est,
+                                                                  tolerance_lvl = tolerance_lvl),
+                                align = 'right',
+                                coredata = FALSE)
+    
+    rolling_VaR_ES_lead <- stats::lag(rolling_VaR_ES, k = -1)
+    
+    rolling_VaR_ES_df <- as.data.frame(rolling_VaR_ES_lead)
+    rolling_VaR_ES_df <- rolling_VaR_ES_df %>%
+      mutate(Date = as.Date(rownames(rolling_VaR_ES_df)))
+    
+    VaR_ES_results_df <- inner_join(garchsimlation_df, rolling_VaR_ES_df, by = 'Date')
+    
+    # Filter for shortfalls
+    shortfall_df <- VaR_ES_results_df %>%
+      filter(Return <= VaR) %>%
+      mutate(shortfall = Return - ES) %>%
+      mutate(residual_t_min_1_quadr_lower_0 = ifelse(residual_t_min_1 < 0, residual_t_min_1_quadr, 0))
+    
+    # Simple Mincer regression
+    mincer_reg <- lm(formula = shortfall ~ 1, data = shortfall_df)
+    mincer_reg_result <- linearHypothesis(mincer_reg, c('(Intercept) = 0'), white.adjust = white_adjust)
+    p_value_simple <- mincer_reg_result$'Pr(>F)'[2]
+    
+    # Variance Mincer regression
+    mincer_reg <- lm(formula = shortfall ~ variance_t_min_1, data = shortfall_df)
+    coef_var <- as.double(coef(mincer_reg)['variance_t_min_1'])
+    # only intercept
+    mincer_reg_result <- linearHypothesis(mincer_reg, c('(Intercept) = 0'), white.adjust = white_adjust)
+    p_value_var_inter <- mincer_reg_result$'Pr(>F)'[2]
+    # whole model
+    mincer_reg_result <- linearHypothesis(mincer_reg, c('(Intercept) = 0', 'variance_t_min_1 = 0'), white.adjust = white_adjust)
+    p_value_var_whole <- mincer_reg_result$'Pr(>F)'[2]
+    
+    # Residual Mincer regression
+    mincer_reg <- lm(formula = shortfall ~ residual_t_min_1_quadr, data = shortfall_df)
+    coef_res <- as.double(coef(mincer_reg)['residual_t_min_1_quadr'])
+    # only intercept
+    mincer_reg_result <- linearHypothesis(mincer_reg, c('(Intercept) = 0'), white.adjust = white_adjust)
+    p_value_res_inter <- mincer_reg_result$'Pr(>F)'[2]
+    # whole model
+    mincer_reg_result <- linearHypothesis(mincer_reg, c('(Intercept) = 0', 'residual_t_min_1_quadr = 0'), white.adjust = white_adjust)
+    p_value_res_whole <- mincer_reg_result$'Pr(>F)'[2]
+    
+    # Variance and Residual Mincer regression
+    mincer_reg <- lm(formula = shortfall ~ variance_t_min_1 + residual_t_min_1_quadr, data = shortfall_df)
+    coef_var_res_var <- as.double(coef(mincer_reg)['variance_t_min_1'])
+    coef_var_res_res <- as.double(coef(mincer_reg)['residual_t_min_1_quadr'])
+    # only intercept
+    mincer_reg_result <- linearHypothesis(mincer_reg, c('(Intercept) = 0'), white.adjust = white_adjust)
+    p_value_var_res_inter <- mincer_reg_result$'Pr(>F)'[2]
+    # whole model
+    mincer_reg_result <- linearHypothesis(mincer_reg, c('(Intercept) = 0', 'variance_t_min_1 = 0', 'residual_t_min_1_quadr = 0'), white.adjust = white_adjust)
+    p_value_var_res_whole <- mincer_reg_result$'Pr(>F)'[2]
+    
+    # Save results
+    # simple results
+    result_lst[['simple']][['p']] <- p_value_simple
+    result_lst[['simple']][['p0_01']] <- ifelse(p_value_simple <= 0.01, 1, 0)
+    result_lst[['simple']][['p0_05']] <- ifelse(p_value_simple <= 0.05, 1, 0)
+    result_lst[['simple']][['p0_1']] <- ifelse(p_value_simple <= 0.1, 1, 0)
+    # variance results
+    result_lst[['var']][['coef_var']] <- coef_var
+    result_lst[['var']][['p_inter']] <- p_value_var_inter
+    result_lst[['var']][['p0_01_inter']] <- ifelse(p_value_var_inter <= 0.01, 1, 0)
+    result_lst[['var']][['p0_05_inter']] <- ifelse(p_value_var_inter <= 0.05, 1, 0)
+    result_lst[['var']][['p0_1_inter']] <- ifelse(p_value_var_inter <= 0.1, 1, 0)
+    result_lst[['var']][['p_whole']] <- p_value_var_whole
+    result_lst[['var']][['p0_01_whole']] <- ifelse(p_value_var_whole <= 0.01, 1, 0)
+    result_lst[['var']][['p0_05_whole']] <- ifelse(p_value_var_whole <= 0.05, 1, 0)
+    result_lst[['var']][['p0_1_whole']] <- ifelse(p_value_var_whole <= 0.1, 1, 0)
+    # residuals results
+    result_lst[['res']][['coef_res']] <- coef_res
+    result_lst[['res']][['p_inter']] <- p_value_res_inter
+    result_lst[['res']][['p0_01_inter']] <- ifelse(p_value_res_inter <= 0.01, 1, 0)
+    result_lst[['res']][['p0_05_inter']] <- ifelse(p_value_res_inter <= 0.05, 1, 0)
+    result_lst[['res']][['p0_1_inter']] <- ifelse(p_value_res_inter <= 0.1, 1, 0)
+    result_lst[['res']][['p_whole']] <- p_value_res_whole
+    result_lst[['res']][['p0_01_whole']] <- ifelse(p_value_res_whole <= 0.01, 1, 0)
+    result_lst[['res']][['p0_05_whole']] <- ifelse(p_value_res_whole <= 0.05, 1, 0)
+    result_lst[['res']][['p0_1_whole']] <- ifelse(p_value_res_whole <= 0.1, 1, 0)
+    # variance and residuals results
+    result_lst[['var_res']][['coef_var']] <- coef_var_res_var
+    result_lst[['var_res']][['coef_res']] <- coef_var_res_res
+    result_lst[['var_res']][['p_inter']] <- p_value_var_res_inter
+    result_lst[['var_res']][['p0_01_inter']] <- ifelse(p_value_var_res_inter <= 0.01, 1, 0)
+    result_lst[['var_res']][['p0_05_inter']] <- ifelse(p_value_var_res_inter <= 0.05, 1, 0)
+    result_lst[['var_res']][['p0_1_inter']] <- ifelse(p_value_var_res_inter <= 0.1, 1, 0)
+    result_lst[['var_res']][['p_whole']] <- p_value_var_res_whole
+    result_lst[['var_res']][['p0_01_whole']] <- ifelse(p_value_var_res_whole <= 0.01, 1, 0)
+    result_lst[['var_res']][['p0_05_whole']] <- ifelse(p_value_var_res_whole <= 0.05, 1, 0)
+    result_lst[['var_res']][['p0_1_whole']] <- ifelse(p_value_var_res_whole <= 0.1, 1, 0)
+    result_lst
+  }
+  
+  # Organize results
+  result <- list(simple = list(p = vector(),
+                               p0_01 = vector(),
+                               p0_05 = vector(),
+                               p0_1 = vector()),
+                 var = list(coef_var = vector(),
+                            p_inter = vector(),
+                            p0_01_inter = vector(),
+                            p0_05_inter = vector(),
+                            p0_1_inter = vector(),
+                            p_whole = vector(),
+                            p0_01_whole = vector(),
+                            p0_05_whole = vector(),
+                            p0_1_whole = vector()),
+                 res = list(coef_res = vector(),
+                            p_inter = vector(),
+                            p0_01_inter = vector(),
+                            p0_05_inter = vector(),
+                            p0_1_inter = vector(),
+                            p_whole = vector(),
+                            p0_01_whole = vector(),
+                            p0_05_whole = vector(),
+                            p0_1_whole = vector()),
+                 var_res = list(coef_var = vector(),
+                                coef_res = vector(),
+                                p_inter = vector(),
+                                p0_01_inter = vector(),
+                                p0_05_inter = vector(),
+                                p0_1_inter = vector(),
+                                p_whole = vector(),
+                                p0_01_whole = vector(),
+                                p0_05_whole = vector(),
+                                p0_1_whole = vector()))
+  for(i in 1:n_loop){
+    for(method in names(result_foreach[[i]])){
+      for(metrix in names(result_foreach[[i]][[method]])){
+        result[[method]][[metrix]] <- c(result[[method]][[metrix]], result_foreach[[i]][[method]][[metrix]])
+      }
+    }
+  }
+  return(result)
+}
+
