@@ -31,8 +31,8 @@ source('functions.R')
 ########### Global parameters ###############
 #############################################
 tolerance_lvl = 0.05
-n_loop_est = 4 #1000
-n_loop_fix = 12 #1000
+n_loop_est = 1000
+n_loop_fix = 1000
 oos_window_est = 5000
 oos_window_fix = 10000
 est_window = 750
@@ -104,7 +104,8 @@ result_size_est <- estimation_loop_par(n_loop=n_loop_est,
                                        cores=cores,
                                        white_adjust=white_adjust,
                                        seed=seed)
-start <- Sys.time()
+result_size_est_matrix <- create_result_matrix(result_size_est)
+
 # Size with fixed parameters
 result_size_fix <- estimation_loop_par(n_loop=n_loop_fix,
                                        est_window=est_window,
@@ -125,7 +126,8 @@ result_size_fix <- estimation_loop_par(n_loop=n_loop_fix,
                                        cores=cores,
                                        white_adjust=white_adjust,
                                        seed=seed)
-print(Sys.time() - start)
+result_size_fix_matrix <- create_result_matrix(result_size_fix)
+
 # Power with estimated parameters
 result_power_est <- estimation_loop_par(n_loop=n_loop_est,
                                         est_window=est_window,
@@ -146,6 +148,7 @@ result_power_est <- estimation_loop_par(n_loop=n_loop_est,
                                         cores=cores,
                                         white_adjust=white_adjust,
                                         seed=seed)
+result_power_est_matrix <- create_result_matrix(result_power_est)
 
 # Power with fixed parameters
 result_power_fix <- estimation_loop_par(n_loop=n_loop_fix,
@@ -167,3 +170,4 @@ result_power_fix <- estimation_loop_par(n_loop=n_loop_fix,
                                         cores=cores,
                                         white_adjust=white_adjust,
                                         seed=seed)
+result_power_fix_matrix <- create_result_matrix(result_power_fix)

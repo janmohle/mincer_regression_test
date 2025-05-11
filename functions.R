@@ -330,3 +330,24 @@ estimation_loop_par <- function(n_loop,
   }
   return(result)
 }
+
+#############################################################################
+################### Create result matrix     ################################
+#############################################################################
+create_result_matrix <- function(result_lst){
+  row_names <- names(result_lst)
+  col_names <- names(result_lst[[1]])[-1]
+  
+  result_matrix <- matrix(nrow = length(row_names), ncol = length(col_names))
+  rownames(result_matrix) <- row_names
+  colnames(result_matrix) <- col_names
+  
+  for(row in row_names){
+    for(col in col_names){
+      result_matrix[row, col] <- mean(result_lst[[row]][[col]])
+    }
+  }
+  return(result_matrix)
+}
+
+
