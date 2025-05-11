@@ -1,0 +1,1 @@
+In this project I am testing different designs of Mincer Regression for the validation of ES using simulated return series.
