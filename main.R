@@ -37,8 +37,8 @@ oos_window_est = 5000
 oos_window_fix = 10000
 est_window = 750
 white_adjust = TRUE
-cores = 4
-seed = 123
+cores = 3#4
+seed = 78
 
 ###########################################
 ########### Size parameters ###############
@@ -48,7 +48,7 @@ seed = 123
 omega_size = 0.005
 alpha1_size = 0.05
 beta1_size = 0.94
-eta11_size = NA
+gamma1_size = NA
 
 # Simulation specifications
 var_spec_sim_size = list(model = 'sGARCH',garchOrder = c(1,1))
@@ -68,10 +68,10 @@ dist_spec_est_size = dist_spec_sim_size
 omega_power = 0.005
 alpha1_power = 0.02
 beta1_power = 0.94
-eta11_power = 0.06
+gamma1_power = 0.06
 
 # Simulation specifications
-var_spec_sim_power = list(model = 'fGARCH', garchOrder = c(1, 1), submodel = 'TGARCH')
+var_spec_sim_power = list(model = 'gjrGARCH', garchOrder = c(1, 1))
 mean_spec_sim_power = list(armaOrder = c(0,0))
 dist_spec_sim_power = 'norm'
 
@@ -97,7 +97,7 @@ result_size_est <- estimation_loop_par(n_loop=n_loop_est,
                                        omega=omega_size,
                                        alpha1=alpha1_size,
                                        beta1=beta1_size,
-                                       eta11=eta11_size,
+                                       gamma1=gamma1_size,
                                        var_spec_est=var_spec_est_size,
                                        mean_spec_est=mean_spec_est_size,
                                        dist_spec_est=dist_spec_est_size,
@@ -119,7 +119,7 @@ result_size_fix <- estimation_loop_par(n_loop=n_loop_fix,
                                        omega=omega_size,
                                        alpha1=alpha1_size,
                                        beta1=beta1_size,
-                                       eta11=eta11_size,
+                                       gamma1=gamma1_size,
                                        var_spec_est=var_spec_est_size,
                                        mean_spec_est=mean_spec_est_size,
                                        dist_spec_est=dist_spec_est_size,
@@ -141,7 +141,7 @@ result_power_est <- estimation_loop_par(n_loop=n_loop_est,
                                         omega=omega_power,
                                         alpha1=alpha1_power,
                                         beta1=beta1_power,
-                                        eta11=eta11_power,
+                                        gamma1=gamma1_power,
                                         var_spec_est=var_spec_est_power,
                                         mean_spec_est=mean_spec_est_power,
                                         dist_spec_est=dist_spec_est_power,
@@ -156,14 +156,14 @@ result_power_fix <- estimation_loop_par(n_loop=n_loop_fix,
                                         oos_window=oos_window_fix,
                                         tolerance_lvl=tolerance_lvl,
                                         estimate=FALSE,
-                                        fixed_pars=list(mu = 0, omega = 0.005, alpha1 = 0.05, beta1 = 0.94),
+                                        fixed_pars=list(mu = 0, omega = omega_size, alpha1 = alpha1_size, beta1 = beta1_size),
                                         var_spec_sim=var_spec_sim_power,
                                         mean_spec_sim=mean_spec_sim_power,
                                         dist_spec_sim=dist_spec_sim_power,
                                         omega=omega_power,
                                         alpha1=alpha1_power,
                                         beta1=beta1_power,
-                                        eta11=eta11_power,
+                                        gamma1=gamma1_power,
                                         var_spec_est=var_spec_est_power,
                                         mean_spec_est=mean_spec_est_power,
                                         dist_spec_est=dist_spec_est_power,
