@@ -162,7 +162,8 @@ estimation_loop_par <- function(n_loop,
                                 fixed_pars_est,
                                 cores,
                                 white_adjust,
-                                seed=NA){
+                                seed=NA,
+                                mincer_spec){
   
   # Register cores
   registerDoParallel(cores = cores)
@@ -223,33 +224,12 @@ estimation_loop_par <- function(n_loop,
     shortfall_df <- VaR_ES_results_df %>%
       filter(Return <= VaR) %>%
       mutate(shortfall = Return - ES) %>%
-      mutate(residual_t_min_1_quadr_lower_0 = ifelse(residual_t_min_1 < 0, residual_t_min_1_quadr, 0))
+      mutate(residual_t_min_1_quadr_lower_0 = ifelse(residual_t_min_1 < 0, residual_t_min_1_quadr, 0)) %>%
+      mutate(indicator_residual_lower_0 = ifelse(residual_t_min_1 < 0, 1, 0))
     
     # Save number of observations that go into Mincer regression
     n_obs_mincer <- nrow(shortfall_df)
 
-    # Mincer regression specifications
-    mincer_spec <- list(formula = list(simple_shortfall = shortfall ~ 1,
-                                       simple_return = Return ~ ES,
-                                       variance_shortfall = shortfall ~ variance_t_min_1,
-                                       variance_return = Return ~ variance_t_min_1 + ES,
-                                       residual_sqrt_shortfall = shortfall ~ residual_t_min_1_quadr,
-                                       residual_sqrt_return = Return ~ residual_t_min_1_quadr + ES,
-                                       residual_sqrt0_shortfall = shortfall ~ residual_t_min_1_quadr_lower_0,
-                                       residual_sqrt0_return = Return ~ residual_t_min_1_quadr_lower_0 + ES,
-                                       full_shortfall = shortfall ~ variance_t_min_1 + residual_t_min_1_quadr + residual_t_min_1_quadr_lower_0,
-                                       full_return = Return ~ variance_t_min_1 + residual_t_min_1_quadr + residual_t_min_1_quadr_lower_0 + ES),
-                        h0 = list(simple_shortfall = c('(Intercept) = 0'),
-                                  simple_return = c('(Intercept) = 0', 'ES = 1'),
-                                  variance_shortfall = c('(Intercept) = 0', 'variance_t_min_1 = 0'),
-                                  variance_return = c('(Intercept) = 0', 'variance_t_min_1 = 0', 'ES = 1'),
-                                  residual_sqrt_shortfall = c('(Intercept) = 0', 'residual_t_min_1_quadr = 0'),
-                                  residual_sqrt_return = c('(Intercept) = 0', 'residual_t_min_1_quadr = 0', 'ES = 1'),
-                                  residual_sqrt0_shortfall = c('(Intercept) = 0', 'residual_t_min_1_quadr_lower_0 = 0'),
-                                  residual_sqrt0_return = c('(Intercept) = 0', 'residual_t_min_1_quadr_lower_0 = 0', 'ES = 1'),
-                                  full_shortfall = c('(Intercept) = 0', 'variance_t_min_1 = 0', 'residual_t_min_1_quadr = 0', 'residual_t_min_1_quadr_lower_0 = 0'),
-                                  full_return = c('(Intercept) = 0', 'variance_t_min_1 = 0', 'residual_t_min_1_quadr = 0', 'residual_t_min_1_quadr_lower_0 = 0', 'ES = 1')))
-    
     # Mincer regression execution
     for(j in 1:length(mincer_spec[['formula']])){
       p_value_j <- mincer_regression(formula = mincer_spec[['formula']][[j]],
@@ -259,16 +239,12 @@ estimation_loop_par <- function(n_loop,
       assign(paste0('p_value_', j), p_value_j)
       rm(p_value_j)
     }
-    # (Maybe add coefficients in this way: coef_var <- as.double(coef(mincer_reg)['variance_t_min_1']))
-    
+
     # Save results
     result_lst <- list()
-    result_lst_names <- c('simple_shortfall', 'simple_return',
-                          'variance_shortfall', 'variance_return',
-                          'residual_sqrt_shortfall', 'residual_sqrt_return',
-                          'residual_sqrt0_shortfall', 'residual_sqrt0_return',
-                          'full_shortfall', 'full_return')
-    for(j in 1:10){
+    result_lst_names <- names(mincer_spec[['formula']])
+
+    for(j in 1:length(mincer_spec[['formula']])){
       p_value <- get(paste0('p_value_', j))
       result_lst[[result_lst_names[j]]][['p']] <- p_value
       result_lst[[result_lst_names[j]]][['p0_01']] <- ifelse(p_value < 0.01, 1, 0)
@@ -280,47 +256,15 @@ estimation_loop_par <- function(n_loop,
   }
 
   # Organize results
-  result <- list(simple_shortfall = list(p = vector(),
-                                         p0_01 = vector(),
-                                         p0_05 = vector(),
-                                         p0_1 = vector()),
-                 simple_return = list(p = vector(),
+  result <- list()
+  for(mincer_reg_name in names(mincer_spec[['formula']])){
+    result[[mincer_reg_name]] <- list(p = vector(),
                                       p0_01 = vector(),
                                       p0_05 = vector(),
-                                      p0_1 = vector()),
-                 variance_shortfall = list(p = vector(),
-                                           p0_01 = vector(),
-                                           p0_05 = vector(),
-                                           p0_1 = vector()),
-                 variance_return = list(p = vector(),
-                                        p0_01 = vector(),
-                                        p0_05 = vector(),
-                                        p0_1 = vector()),
-                 residual_sqrt_shortfall = list(p = vector(),
-                                                p0_01 = vector(),
-                                                p0_05 = vector(),
-                                                p0_1 = vector()),
-                 residual_sqrt_return = list(p = vector(),
-                                             p0_01 = vector(),
-                                             p0_05 = vector(),
-                                             p0_1 = vector()),
-                 residual_sqrt0_shortfall = list(p = vector(),
-                                                 p0_01 = vector(),
-                                                 p0_05 = vector(),
-                                                 p0_1 = vector()),
-                 residual_sqrt0_return = list(p = vector(),
-                                              p0_01 = vector(),
-                                              p0_05 = vector(),
-                                              p0_1 = vector()),
-                 full_shortfall = list(p = vector(),
-                                       p0_01 = vector(),
-                                       p0_05 = vector(),
-                                       p0_1 = vector()),
-                 full_return = list(p = vector(),
-                                    p0_01 = vector(),
-                                    p0_05 = vector(),
-                                    p0_1 = vector()),
-                 n_obs_mincer = vector())
+                                      p0_1 = vector())
+  }
+  result[['n_obs_mincer']] <- vector()
+  
   for(i in 1:n_loop){
     for(method in names(result_foreach[[i]])){
       if(method == 'n_obs_mincer'){
@@ -354,5 +298,3 @@ create_result_matrix <- function(result_lst){
   }
   return(result_matrix)
 }
-
-

@@ -36,7 +36,7 @@ n_loop_fix = 1000
 oos_window_est = 5000
 oos_window_fix = 10000
 est_window = 750
-white_adjust = TRUE
+white_adjust = "hc0"
 cores = 3#4
 seed = 78
 
@@ -69,9 +69,9 @@ dist_spec_est_size = dist_spec_sim_size
 
 # Simulation functional parameter
 omega_power = 0.005
-alpha1_power = 0.02
+alpha1_power = 0.01
 beta1_power = 0.94
-gamma1_power = 0.06
+gamma1_power = 0.08
 
 # Simulation specifications
 var_spec_sim_power = list(model = 'gjrGARCH', garchOrder = c(1, 1))
@@ -87,6 +87,35 @@ fixed_pars_sim_power = list(mu = 0,
 var_spec_est_power = list(model = 'sGARCH',garchOrder = c(1,1))
 mean_spec_est_power = mean_spec_sim_power
 dist_spec_est_power = dist_spec_sim_power
+
+###########################################################
+########### Mincer Regression Specifications ##############
+###########################################################
+
+mincer_spec <- list(formula = list(simple_shortfall = shortfall ~ 1,
+                                   simple_return = Return ~ ES,
+                                   variance_shortfall = shortfall ~ variance_t_min_1,
+                                   variance_return = Return ~ variance_t_min_1 + ES,
+                                   residual_sqrt_shortfall = shortfall ~ residual_t_min_1_quadr,
+                                   residual_sqrt_return = Return ~ residual_t_min_1_quadr + ES,
+                                   residual_sqrt0_shortfall = shortfall ~ residual_t_min_1_quadr_lower_0,
+                                   residual_sqrt0_return = Return ~ residual_t_min_1_quadr_lower_0 + ES,
+                                   full_shortfall = shortfall ~ variance_t_min_1 + residual_t_min_1_quadr + residual_t_min_1_quadr_lower_0,
+                                   full_return = Return ~ variance_t_min_1 + residual_t_min_1_quadr + residual_t_min_1_quadr_lower_0 + ES,
+                                   indicator_lower_0_shortfall = shortfall ~ indicator_residual_lower_0,
+                                   indicator_lower_0_return = Return ~ indicator_residual_lower_0 + ES),
+                    h0 = list(simple_shortfall = c('(Intercept) = 0'),
+                              simple_return = c('(Intercept) = 0', 'ES = 1'),
+                              variance_shortfall = c('(Intercept) = 0', 'variance_t_min_1 = 0'),
+                              variance_return = c('(Intercept) = 0', 'variance_t_min_1 = 0', 'ES = 1'),
+                              residual_sqrt_shortfall = c('(Intercept) = 0', 'residual_t_min_1_quadr = 0'),
+                              residual_sqrt_return = c('(Intercept) = 0', 'residual_t_min_1_quadr = 0', 'ES = 1'),
+                              residual_sqrt0_shortfall = c('(Intercept) = 0', 'residual_t_min_1_quadr_lower_0 = 0'),
+                              residual_sqrt0_return = c('(Intercept) = 0', 'residual_t_min_1_quadr_lower_0 = 0', 'ES = 1'),
+                              full_shortfall = c('(Intercept) = 0', 'variance_t_min_1 = 0', 'residual_t_min_1_quadr = 0', 'residual_t_min_1_quadr_lower_0 = 0'),
+                              full_return = c('(Intercept) = 0', 'variance_t_min_1 = 0', 'residual_t_min_1_quadr = 0', 'residual_t_min_1_quadr_lower_0 = 0', 'ES = 1'),
+                              indicator_lower_0_shortfall = c('(Intercept) = 0', 'indicator_residual_lower_0 = 0'),
+                              indicator_lower_0_return = c('(Intercept) = 0', 'indicator_residual_lower_0 = 0', 'ES = 1')))
 
 ##########################################
 ########### Loop execution ###############
@@ -108,7 +137,8 @@ result_size_est <- estimation_loop_par(n_loop=n_loop_est,
                                        fixed_pars_est=NA,
                                        cores=cores,
                                        white_adjust=white_adjust,
-                                       seed=seed)
+                                       seed=seed,
+                                       mincer_spec=mincer_spec)
 result_size_est_matrix <- create_result_matrix(result_size_est)
 
 # Size with fixed parameters
@@ -127,7 +157,8 @@ result_size_fix <- estimation_loop_par(n_loop=n_loop_fix,
                                        fixed_pars_est=fixed_pars_sim_size,
                                        cores=cores,
                                        white_adjust=white_adjust,
-                                       seed=seed)
+                                       seed=seed,
+                                       mincer_spec=mincer_spec)
 result_size_fix_matrix <- create_result_matrix(result_size_fix)
 
 # Power with estimated parameters
@@ -146,7 +177,8 @@ result_power_est <- estimation_loop_par(n_loop=n_loop_est,
                                         fixed_pars_est=NA,
                                         cores=cores,
                                         white_adjust=white_adjust,
-                                        seed=seed)
+                                        seed=seed,
+                                        mincer_spec=mincer_spec)
 result_power_est_matrix <- create_result_matrix(result_power_est)
 
 # Power with fixed parameters
@@ -165,5 +197,6 @@ result_power_fix <- estimation_loop_par(n_loop=n_loop_fix,
                                         fixed_pars_est=fixed_pars_sim_size,
                                         cores=cores,
                                         white_adjust=white_adjust,
-                                        seed=seed)
+                                        seed=seed,
+                                        mincer_spec=mincer_spec)
 result_power_fix_matrix <- create_result_matrix(result_power_fix)
