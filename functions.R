@@ -7,7 +7,7 @@ VaR_ES_forecast <- function(data_zoo,
                             dist_spec,
                             tolerance_lvl,
                             estimate,
-                            fixed_pars){
+                            fixed_pars_est){
   
   # Store last date
   last_date <- tail(index(data_zoo), 1)
@@ -34,7 +34,7 @@ VaR_ES_forecast <- function(data_zoo,
     garchspec <- ugarchspec(variance.model = var_spec,
                             mean.model = mean_spec,
                             distribution.model = dist_spec,
-                            fixed.pars = fixed_pars)
+                            fixed.pars = fixed_pars_est)
     
     # Filter data
     garchfit <- ugarchfilter(spec = garchspec,
@@ -151,18 +151,15 @@ estimation_loop_par <- function(n_loop,
                                 est_window,
                                 oos_window,
                                 tolerance_lvl,
-                                estimate,
-                                fixed_pars,
                                 var_spec_sim,
                                 mean_spec_sim,
                                 dist_spec_sim,
-                                omega,
-                                alpha1,
-                                beta1,
-                                gamma1,
+                                fixed_pars_sim,
+                                estimate,
                                 var_spec_est,
                                 mean_spec_est,
                                 dist_spec_est,
+                                fixed_pars_est,
                                 cores,
                                 white_adjust,
                                 seed=NA){
@@ -187,11 +184,7 @@ estimation_loop_par <- function(n_loop,
     garchspec_sim <- ugarchspec(variance.model = var_spec_sim,
                                 mean.model = mean_spec_sim,
                                 distribution.model = dist_spec_sim,
-                                fixed.pars = list(mu = 0,
-                                                  omega = omega,
-                                                  alpha1 = alpha1,
-                                                  beta1 = beta1,
-                                                  gamma1 = gamma1))
+                                fixed.pars = fixed_pars_sim)
     
     garchsimulation <- ugarchpath(spec = garchspec_sim,
                                   n.sim = est_window + oos_window,
@@ -214,7 +207,7 @@ estimation_loop_par <- function(n_loop,
                                                                   dist_spec = dist_spec_est,
                                                                   tolerance_lvl = tolerance_lvl,
                                                                   estimate = estimate,
-                                                                  fixed_pars = fixed_pars),
+                                                                  fixed_pars_est = fixed_pars_est),
                                 align = 'right',
                                 coredata = FALSE)
 
