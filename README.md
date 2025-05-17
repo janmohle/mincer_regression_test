@@ -1,1 +1,1 @@
-In this project I am testing different designs of Mincer Regression for the validation of ES using simulated return series.
+This is an ongoing simulation project where I am testing Mincer-Zarnowitz-Regression for ES validation

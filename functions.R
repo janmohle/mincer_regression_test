@@ -54,9 +54,9 @@ VaR_ES_forecast <- function(data_zoo,
     # beta1 <<- c(beta1, coef_fit['beta1'])
     
     
-    # Extracting variance from fit
-    variance_t_min_1 <- tail(sigma(garchfit), 1) ^ 2
-    
+    # Extracting last standard deviation from fit
+    st_dev_t_min_1 <- tail(sigma(garchfit), 1)
+
     # Extracting last residual from fit
     residual_t_min_1 <- tail(residuals(garchfit), 1)
     
@@ -107,10 +107,11 @@ VaR_ES_forecast <- function(data_zoo,
     
     # Return results
     results <- data.frame(last_date = last_date,
-                          mu=as.double(mu),
+                          mu = as.double(mu),
                           sigma = as.double(sigma),
                           variance = as.double(sigma^2),
-                          variance_t_min_1 = as.double(variance_t_min_1),
+                          st_dev_t_min_1 = as.double(st_dev_t_min_1),
+                          variance_t_min_1 = as.double(st_dev_t_min_1)^2,
                           residual_t_min_1 = as.double(residual_t_min_1),
                           residual_t_min_1_quadr = as.double(residual_t_min_1)^2,
                           VaR = as.double(VaR),
@@ -120,6 +121,7 @@ VaR_ES_forecast <- function(data_zoo,
                           mu=NA,
                           sigma = NA,
                           variance = NA,
+                          st_dev_t_min_1 = NA,
                           variance_t_min_1 = NA,
                           residual_t_min_1 = NA,
                           residual_t_min_1_quadr = NA,
@@ -231,25 +233,23 @@ estimation_loop_par <- function(n_loop,
     n_obs_mincer <- nrow(shortfall_df)
 
     # Mincer regression execution
-    for(j in 1:length(mincer_spec[['formula']])){
-      p_value_j <- mincer_regression(formula = mincer_spec[['formula']][[j]],
-                                     shortfall_df = shortfall_df,
-                                     h0 = mincer_spec[['h0']][[j]],
-                                     white_adjust = white_adjust)
-      assign(paste0('p_value_', j), p_value_j)
-      rm(p_value_j)
+    p_values_vec <- vector()
+    for(j in 1:length(mincer_spec)){
+      p_values_vec[j] <- mincer_regression(formula = mincer_spec[[j]][['formula']],
+                                           shortfall_df = shortfall_df,
+                                           h0 = mincer_spec[[j]][['h0']],
+                                           white_adjust = white_adjust)
     }
 
     # Save results
     result_lst <- list()
-    result_lst_names <- names(mincer_spec[['formula']])
+    result_lst_names <- names(mincer_spec)
 
-    for(j in 1:length(mincer_spec[['formula']])){
-      p_value <- get(paste0('p_value_', j))
-      result_lst[[result_lst_names[j]]][['p']] <- p_value
-      result_lst[[result_lst_names[j]]][['p0_01']] <- ifelse(p_value < 0.01, 1, 0)
-      result_lst[[result_lst_names[j]]][['p0_05']] <- ifelse(p_value < 0.05, 1, 0)
-      result_lst[[result_lst_names[j]]][['p0_1']] <- ifelse(p_value < 0.1, 1, 0)
+    for(j in 1:length(mincer_spec)){
+      result_lst[[result_lst_names[j]]][['p']] <- p_values_vec[j]
+      result_lst[[result_lst_names[j]]][['p0_01']] <- ifelse(p_values_vec[j] < 0.01, 1, 0)
+      result_lst[[result_lst_names[j]]][['p0_05']] <- ifelse(p_values_vec[j] < 0.05, 1, 0)
+      result_lst[[result_lst_names[j]]][['p0_1']] <- ifelse(p_values_vec[j] < 0.1, 1, 0)
     }
     result_lst[['n_obs_mincer']] <- n_obs_mincer
     result_lst
@@ -257,7 +257,7 @@ estimation_loop_par <- function(n_loop,
 
   # Organize results
   result <- list()
-  for(mincer_reg_name in names(mincer_spec[['formula']])){
+  for(mincer_reg_name in names(mincer_spec)){
     result[[mincer_reg_name]] <- list(p = vector(),
                                       p0_01 = vector(),
                                       p0_05 = vector(),
