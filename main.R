@@ -30,14 +30,15 @@ source('functions.R')
 #############################################
 ########### Global parameters ###############
 #############################################
+result_txt_file = 'results.txt'
 tolerance_lvl = 0.05
 n_loop_est = 1000
-n_loop_fix = 1000
+n_loop_fix = 5#1000
 oos_window_est = 5000
-oos_window_fix = 10000
+oos_window_fix = 1000#0
 est_window = 750
 white_adjust = 'hc3'
-cores = 3#4
+cores = detectCores()#3
 seed = 78
 
 ################################################
@@ -69,9 +70,9 @@ dist_spec_est_size = dist_spec_sim_size
 
 # Simulation functional parameter
 omega_power_1 = 0.005
-alpha1_power_1 = 0.02
+alpha1_power_1 = 0.02#0.03
 beta1_power_1 = 0.94
-gamma1_power_1 = 0.06
+gamma1_power_1 = 0.08#0.07
 
 # Simulation specifications
 var_spec_sim_power_1 = list(model = 'gjrGARCH', garchOrder = c(1, 1))
@@ -96,7 +97,8 @@ dist_spec_est_power_1 = dist_spec_sim_power_1
 omega_power_2 = 0.005
 alpha1_power_2 = 0.01
 beta1_power_2 = 0.94
-gamma1_power_2 = 0.08
+gamma1_power_2 = 0.09
+#!!!!!!PARAMETERS LEAD TO PROBLEMS WITH PERSISTANCE OF GARCH PROCESS
 
 # Simulation specifications
 var_spec_sim_power_2 = list(model = 'gjrGARCH', garchOrder = c(1, 1))
@@ -112,6 +114,32 @@ fixed_pars_sim_power_2 = list(mu = 0,
 var_spec_est_power_2 = list(model = 'sGARCH',garchOrder = c(1,1))
 mean_spec_est_power_2 = mean_spec_sim_power_2
 dist_spec_est_power_2 = dist_spec_sim_power_2
+
+###################################################
+########### Power loop 3 parameters ###############
+###################################################
+
+# Simulation functional parameter
+omega_power_3 = 0.005
+alpha1_power_3 = 0.05
+beta1_power_3 = 0.94
+shape_power_3 = 4
+
+# Simulation specifications
+var_spec_sim_power_3 = list(model = 'sGARCH',garchOrder = c(1,1))
+mean_spec_sim_power_3 = list(armaOrder = c(0,0))
+dist_spec_sim_power_3 = 'std'
+fixed_pars_sim_power_3 = list(mu = 0,
+                              omega = omega_power_3,
+                              alpha1 = alpha1_power_3,
+                              beta1 = beta1_power_3,
+                              shape = shape_power_3)
+
+# Estimation parameters
+var_spec_est_power_3 = var_spec_sim_power_3
+mean_spec_est_power_3 = mean_spec_sim_power_3
+dist_spec_est_power_3 = 'norm'
+
 
 ###########################################################
 ########### Mincer Regression Specifications ##############
@@ -129,23 +157,26 @@ mincer_spec <- list(simple_shortfall = list(formula = shortfall ~ 1,
                                                    h0 = c('(Intercept) = 0', 'residual_t_min_1_quadr = 0')),
                     # residual_sqrt_return = list(formula = Return ~ residual_t_min_1_quadr + ES,
                     #                             h0 = c('(Intercept) = 0', 'residual_t_min_1_quadr = 0', 'ES = 1')),
-                    # residual_sqrt0_shortfall = list(formula = shortfall ~ residual_t_min_1_quadr_lower_0,
-                    #                                 h0 = c('(Intercept) = 0', 'residual_t_min_1_quadr_lower_0 = 0')),
+                    indicator_lower_0_shortfall = list(formula = shortfall ~ indicator_residual_lower_0,
+                                                       h0 = c('(Intercept) = 0', 'indicator_residual_lower_0 = 0')),
+                    # indicator_lower_0_return = list(formula = Return ~ indicator_residual_lower_0 + ES,
+                    #                                 h0 = c('(Intercept) = 0', 'indicator_residual_lower_0 = 0', 'ES = 1')),
+                    residual_sqrt0_shortfall = list(formula = shortfall ~ residual_t_min_1_quadr_lower_0,
+                                                    h0 = c('(Intercept) = 0', 'residual_t_min_1_quadr_lower_0 = 0'))#,
                     # residual_sqrt0_return = list(formula = Return ~ residual_t_min_1_quadr_lower_0 + ES,
                     #                              h0 = c('(Intercept) = 0', 'residual_t_min_1_quadr_lower_0 = 0', 'ES = 1')),
                     # full_shortfall = list(formula = shortfall ~ variance_t_min_1 + residual_t_min_1_quadr + residual_t_min_1_quadr_lower_0,
                     #                       h0 = c('(Intercept) = 0', 'variance_t_min_1 = 0', 'residual_t_min_1_quadr = 0', 'residual_t_min_1_quadr_lower_0 = 0')),
                     # full_return = list(formula = Return ~ variance_t_min_1 + residual_t_min_1_quadr + residual_t_min_1_quadr_lower_0 + ES,
-                    #                    h0 = c('(Intercept) = 0', 'variance_t_min_1 = 0', 'residual_t_min_1_quadr = 0', 'residual_t_min_1_quadr_lower_0 = 0', 'ES = 1')),
-                    indicator_lower_0_shortfall = list(formula = shortfall ~ indicator_residual_lower_0,
-                                                       h0 = c('(Intercept) = 0', 'indicator_residual_lower_0 = 0'))#,
-                    # indicator_lower_0_return = list(formula = Return ~ indicator_residual_lower_0 + ES,
-                    #                                 h0 = c('(Intercept) = 0', 'indicator_residual_lower_0 = 0', 'ES = 1'))
+                    #                    h0 = c('(Intercept) = 0', 'variance_t_min_1 = 0', 'residual_t_min_1_quadr = 0', 'residual_t_min_1_quadr_lower_0 = 0', 'ES = 1'))
                     )
 
 ##########################################
 ########### Loop execution ###############
 ##########################################
+
+# Write date and time of execution start into txt result file
+write(paste0('\n\n', Sys.time()), file = result_txt_file, append = TRUE)
 
 # Size loop without estimated parameters
 result_size_fix <- estimation_loop_par(n_loop=n_loop_fix,
@@ -164,68 +195,116 @@ result_size_fix <- estimation_loop_par(n_loop=n_loop_fix,
                                        cores=cores,
                                        white_adjust=white_adjust,
                                        seed=seed,
-                                       mincer_spec=mincer_spec)
+                                       mincer_spec=mincer_spec,
+                                       execute_uc=TRUE)
 result_size_fix_matrix <- create_result_matrix(result_size_fix)
+write_results_to_txt(name = 'result_size_fix', txt_file = result_txt_file)
+
+# Size loop without estimated parameters (with HC0)
+result_size_fix_hc0 <- estimation_loop_par(n_loop=n_loop_fix,
+                                           est_window=est_window,
+                                           oos_window=oos_window_fix,
+                                           tolerance_lvl=tolerance_lvl,
+                                           var_spec_sim=var_spec_sim_size,
+                                           mean_spec_sim=mean_spec_sim_size,
+                                           dist_spec_sim=dist_spec_sim_size,
+                                           fixed_pars_sim=fixed_pars_sim_size,
+                                           estimate=FALSE,
+                                           var_spec_est=var_spec_est_size,
+                                           mean_spec_est=mean_spec_est_size,
+                                           dist_spec_est=dist_spec_est_size,
+                                           fixed_pars_est=fixed_pars_sim_size,
+                                           cores=cores,
+                                           white_adjust='hc0',
+                                           seed=seed,
+                                           mincer_spec=mincer_spec,
+                                           execute_uc=TRUE)
+result_size_fix_hc0_matrix <- create_result_matrix(result_size_fix_hc0)
+write_results_to_txt(name = 'result_size_fix_hc0', txt_file = result_txt_file)
 
 # Size loop with estimated parameters
-result_size_est <- estimation_loop_par(n_loop=n_loop_est,
-                                       est_window=est_window,
-                                       oos_window=oos_window_est,
-                                       tolerance_lvl=tolerance_lvl,
-                                       var_spec_sim=var_spec_sim_size,
-                                       mean_spec_sim=mean_spec_sim_size,
-                                       dist_spec_sim=dist_spec_sim_size,
-                                       fixed_pars_sim=fixed_pars_sim_size,
-                                       estimate=TRUE,
-                                       var_spec_est=var_spec_est_size,
-                                       mean_spec_est=mean_spec_est_size,
-                                       dist_spec_est=dist_spec_est_size,
-                                       fixed_pars_est=NA,
-                                       cores=cores,
-                                       white_adjust=white_adjust,
-                                       seed=seed,
-                                       mincer_spec=mincer_spec)
-result_size_est_matrix <- create_result_matrix(result_size_est)
+# result_size_est <- estimation_loop_par(n_loop=n_loop_est,
+#                                        est_window=est_window,
+#                                        oos_window=oos_window_est,
+#                                        tolerance_lvl=tolerance_lvl,
+#                                        var_spec_sim=var_spec_sim_size,
+#                                        mean_spec_sim=mean_spec_sim_size,
+#                                        dist_spec_sim=dist_spec_sim_size,
+#                                        fixed_pars_sim=fixed_pars_sim_size,
+#                                        estimate=TRUE,
+#                                        var_spec_est=var_spec_est_size,
+#                                        mean_spec_est=mean_spec_est_size,
+#                                        dist_spec_est=dist_spec_est_size,
+#                                        fixed_pars_est=NA,
+#                                        cores=cores,
+#                                        white_adjust=white_adjust,
+#                                        seed=seed,
+#                                        mincer_spec=mincer_spec,
+#                                        execute_uc=FALSE)
+# result_size_est_matrix <- create_result_matrix(result_size_est)
 
 # Power loop 1 without estimated parameters
-result_power_1_fix <- estimation_loop_par(n_loop=n_loop_fix,
-                                          est_window=est_window,
-                                          oos_window=oos_window_fix,
-                                          tolerance_lvl=tolerance_lvl,
-                                          var_spec_sim=var_spec_sim_power_1,
-                                          mean_spec_sim=mean_spec_sim_power_1,
-                                          dist_spec_sim=dist_spec_sim_power_1,
-                                          fixed_pars_sim=fixed_pars_sim_power_1,
-                                          estimate=FALSE,
-                                          var_spec_est=var_spec_est_power_1,
-                                          mean_spec_est=mean_spec_est_power_1,
-                                          dist_spec_est=dist_spec_est_power_1,
-                                          fixed_pars_est=fixed_pars_sim_size,
-                                          cores=cores,
-                                          white_adjust=white_adjust,
-                                          seed=seed,
-                                          mincer_spec=mincer_spec)
-result_power_1_fix_matrix <- create_result_matrix(result_power_1_fix)
+# result_power_1_fix <- estimation_loop_par(n_loop=n_loop_fix,
+#                                           est_window=est_window,
+#                                           oos_window=oos_window_fix,
+#                                           tolerance_lvl=tolerance_lvl,
+#                                           var_spec_sim=var_spec_sim_power_1,
+#                                           mean_spec_sim=mean_spec_sim_power_1,
+#                                           dist_spec_sim=dist_spec_sim_power_1,
+#                                           fixed_pars_sim=fixed_pars_sim_power_1,
+#                                           estimate=FALSE,
+#                                           var_spec_est=var_spec_est_power_1,
+#                                           mean_spec_est=mean_spec_est_power_1,
+#                                           dist_spec_est=dist_spec_est_power_1,
+#                                           fixed_pars_est=fixed_pars_sim_size,
+#                                           cores=cores,
+#                                           white_adjust=white_adjust,
+#                                           seed=seed,
+#                                           mincer_spec=mincer_spec,
+#                                           execute_uc=TRUE)
+# result_power_1_fix_matrix <- create_result_matrix(result_power_1_fix)
+# 
+# # Power loop 1 without estimated parameters (with HC0)
+# result_power_1_fix_hc0 <- estimation_loop_par(n_loop=n_loop_fix,
+#                                               est_window=est_window,
+#                                               oos_window=oos_window_fix,
+#                                               tolerance_lvl=tolerance_lvl,
+#                                               var_spec_sim=var_spec_sim_power_1,
+#                                               mean_spec_sim=mean_spec_sim_power_1,
+#                                               dist_spec_sim=dist_spec_sim_power_1,
+#                                               fixed_pars_sim=fixed_pars_sim_power_1,
+#                                               estimate=FALSE,
+#                                               var_spec_est=var_spec_est_power_1,
+#                                               mean_spec_est=mean_spec_est_power_1,
+#                                               dist_spec_est=dist_spec_est_power_1,
+#                                               fixed_pars_est=fixed_pars_sim_size,
+#                                               cores=cores,
+#                                               white_adjust='hc0',
+#                                               seed=seed,
+#                                               mincer_spec=mincer_spec,
+#                                               execute_uc=TRUE)
+# result_power_1_fix_hc0_matrix <- create_result_matrix(result_power_1_fix_hc0)
 
 # Power loop 1 with estimated parameters
-result_power_1_est <- estimation_loop_par(n_loop=n_loop_est,
-                                          est_window=est_window,
-                                          oos_window=oos_window_est,
-                                          tolerance_lvl=tolerance_lvl,
-                                          var_spec_sim=var_spec_sim_power_1,
-                                          mean_spec_sim=mean_spec_sim_power_1,
-                                          dist_spec_sim=dist_spec_sim_power_1,
-                                          fixed_pars_sim=fixed_pars_sim_power_1,
-                                          estimate=TRUE,
-                                          var_spec_est=var_spec_est_power_1,
-                                          mean_spec_est=mean_spec_est_power_1,
-                                          dist_spec_est=dist_spec_est_power_1,
-                                          fixed_pars_est=NA,
-                                          cores=cores,
-                                          white_adjust=white_adjust,
-                                          seed=seed,
-                                          mincer_spec=mincer_spec)
-result_power_1_est_matrix <- create_result_matrix(result_power_1_est)
+# result_power_1_est <- estimation_loop_par(n_loop=n_loop_est,
+#                                           est_window=est_window,
+#                                           oos_window=oos_window_est,
+#                                           tolerance_lvl=tolerance_lvl,
+#                                           var_spec_sim=var_spec_sim_power_1,
+#                                           mean_spec_sim=mean_spec_sim_power_1,
+#                                           dist_spec_sim=dist_spec_sim_power_1,
+#                                           fixed_pars_sim=fixed_pars_sim_power_1,
+#                                           estimate=TRUE,
+#                                           var_spec_est=var_spec_est_power_1,
+#                                           mean_spec_est=mean_spec_est_power_1,
+#                                           dist_spec_est=dist_spec_est_power_1,
+#                                           fixed_pars_est=NA,
+#                                           cores=cores,
+#                                           white_adjust=white_adjust,
+#                                           seed=seed,
+#                                           mincer_spec=mincer_spec,
+#                                           execute_uc=FALSE)
+# result_power_1_est_matrix <- create_result_matrix(result_power_1_est)
 
 # Power loop 2 without estimated parameters
 result_power_2_fix <- estimation_loop_par(n_loop=n_loop_fix,
@@ -244,25 +323,94 @@ result_power_2_fix <- estimation_loop_par(n_loop=n_loop_fix,
                                           cores=cores,
                                           white_adjust=white_adjust,
                                           seed=seed,
-                                          mincer_spec=mincer_spec)
+                                          mincer_spec=mincer_spec,
+                                          execute_uc=TRUE)
 result_power_2_fix_matrix <- create_result_matrix(result_power_2_fix)
+write_results_to_txt(name = 'result_power_2_fix', txt_file = result_txt_file)
+
+# Power loop 2 without estimated parameters (with HC0)
+result_power_2_fix_hc0 <- estimation_loop_par(n_loop=n_loop_fix,
+                                              est_window=est_window,
+                                              oos_window=oos_window_fix,
+                                              tolerance_lvl=tolerance_lvl,
+                                              var_spec_sim=var_spec_sim_power_2,
+                                              mean_spec_sim=mean_spec_sim_power_2,
+                                              dist_spec_sim=dist_spec_sim_power_2,
+                                              fixed_pars_sim=fixed_pars_sim_power_2,
+                                              estimate=FALSE,
+                                              var_spec_est=var_spec_est_power_2,
+                                              mean_spec_est=mean_spec_est_power_2,
+                                              dist_spec_est=dist_spec_est_power_2,
+                                              fixed_pars_est=fixed_pars_sim_size,
+                                              cores=cores,
+                                              white_adjust='hc0',
+                                              seed=seed,
+                                              mincer_spec=mincer_spec,
+                                              execute_uc=TRUE)
+result_power_2_fix_hc0_matrix <- create_result_matrix(result_power_2_fix_hc0)
+write_results_to_txt(name = 'result_power_2_fix_hc0', txt_file = result_txt_file)
 
 # Power loop 2 with estimated parameters
-result_power_2_est <- estimation_loop_par(n_loop=n_loop_est,
+# result_power_2_est <- estimation_loop_par(n_loop=n_loop_est,
+#                                           est_window=est_window,
+#                                           oos_window=oos_window_est,
+#                                           tolerance_lvl=tolerance_lvl,
+#                                           var_spec_sim=var_spec_sim_power_2,
+#                                           mean_spec_sim=mean_spec_sim_power_2,
+#                                           dist_spec_sim=dist_spec_sim_power_2,
+#                                           fixed_pars_sim=fixed_pars_sim_power_2,
+#                                           estimate=TRUE,
+#                                           var_spec_est=var_spec_est_power_2,
+#                                           mean_spec_est=mean_spec_est_power_2,
+#                                           dist_spec_est=dist_spec_est_power_2,
+#                                           fixed_pars_est=NA,
+#                                           cores=cores,
+#                                           white_adjust=white_adjust,
+#                                           seed=seed,
+#                                           mincer_spec=mincer_spec,
+#                                           execute_uc=FALSE)
+# result_power_2_est_matrix <- create_result_matrix(result_power_2_est)
+
+# Power loop 3 without estimated parameters
+result_power_3_fix <- estimation_loop_par(n_loop=n_loop_fix,
                                           est_window=est_window,
-                                          oos_window=oos_window_est,
+                                          oos_window=oos_window_fix,
                                           tolerance_lvl=tolerance_lvl,
-                                          var_spec_sim=var_spec_sim_power_2,
-                                          mean_spec_sim=mean_spec_sim_power_2,
-                                          dist_spec_sim=dist_spec_sim_power_2,
-                                          fixed_pars_sim=fixed_pars_sim_power_2,
-                                          estimate=TRUE,
-                                          var_spec_est=var_spec_est_power_2,
-                                          mean_spec_est=mean_spec_est_power_2,
-                                          dist_spec_est=dist_spec_est_power_2,
-                                          fixed_pars_est=NA,
+                                          var_spec_sim=var_spec_sim_power_3,
+                                          mean_spec_sim=mean_spec_sim_power_3,
+                                          dist_spec_sim=dist_spec_sim_power_3,
+                                          fixed_pars_sim=fixed_pars_sim_power_3,
+                                          estimate=FALSE,
+                                          var_spec_est=var_spec_est_power_3,
+                                          mean_spec_est=mean_spec_est_power_3,
+                                          dist_spec_est=dist_spec_est_power_3,
+                                          fixed_pars_est=fixed_pars_sim_size,
                                           cores=cores,
                                           white_adjust=white_adjust,
                                           seed=seed,
-                                          mincer_spec=mincer_spec)
-result_power_2_est_matrix <- create_result_matrix(result_power_2_est)
+                                          mincer_spec=mincer_spec,
+                                          execute_uc=TRUE)
+result_power_3_fix_matrix <- create_result_matrix(result_power_3_fix)
+write_results_to_txt(name = 'result_power_3_fix', txt_file = result_txt_file)
+
+# Power loop 3 without estimated parameters (with HC0)
+result_power_3_fix_hc0 <- estimation_loop_par(n_loop=n_loop_fix,
+                                              est_window=est_window,
+                                              oos_window=oos_window_fix,
+                                              tolerance_lvl=tolerance_lvl,
+                                              var_spec_sim=var_spec_sim_power_3,
+                                              mean_spec_sim=mean_spec_sim_power_3,
+                                              dist_spec_sim=dist_spec_sim_power_3,
+                                              fixed_pars_sim=fixed_pars_sim_power_3,
+                                              estimate=FALSE,
+                                              var_spec_est=var_spec_est_power_3,
+                                              mean_spec_est=mean_spec_est_power_3,
+                                              dist_spec_est=dist_spec_est_power_3,
+                                              fixed_pars_est=fixed_pars_sim_size,
+                                              cores=cores,
+                                              white_adjust='hc0',
+                                              seed=seed,
+                                              mincer_spec=mincer_spec,
+                                              execute_uc=TRUE)
+result_power_3_fix_hc0_matrix <- create_result_matrix(result_power_3_fix_hc0)
+write_results_to_txt(name = 'result_power_3_fix_hc0', txt_file = result_txt_file)

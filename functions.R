@@ -110,6 +110,9 @@ VaR_ES_forecast <- function(data_zoo,
                           mu = as.double(mu),
                           sigma = as.double(sigma),
                           variance = as.double(sigma^2),
+                          skew = skew,
+                          shape = shape,
+                          lambda = lambda,
                           st_dev_t_min_1 = as.double(st_dev_t_min_1),
                           variance_t_min_1 = as.double(st_dev_t_min_1)^2,
                           residual_t_min_1 = as.double(residual_t_min_1),
@@ -121,6 +124,9 @@ VaR_ES_forecast <- function(data_zoo,
                           mu=NA,
                           sigma = NA,
                           variance = NA,
+                          skew = NA,
+                          shape = NA,
+                          lambda = NA,
                           st_dev_t_min_1 = NA,
                           variance_t_min_1 = NA,
                           residual_t_min_1 = NA,
@@ -146,6 +152,31 @@ mincer_regression <- function(formula,
   return(p_value)
 }
 
+############################################################################################
+### Unconditional coverage test for ES (no correction for parameter estimation effect)  ####
+############################################################################################
+ES_uc_backtest <- function(CumVio,
+                           tolerance_lvl){
+  
+  # Extracting non-NA cumulative violations
+  not_na_Cum_Vio <- !is.na(CumVio)
+  H_hut <- CumVio[not_na_Cum_Vio]
+  
+  # Mean and length of H_hut
+  H_mean <- mean(H_hut)
+  n <- length(H_hut)
+  
+  # Test statistic calculation
+  U <- (sqrt(n) * (H_mean - (tolerance_lvl / 2))) / sqrt(tolerance_lvl * ((1 / 3) - (tolerance_lvl / 4)))
+  
+  # p-value calculation
+  p <- 2 * pnorm(q = abs(U),
+                 lower.tail = FALSE)
+  
+  # Return p-value
+  return(p)
+}
+
 #############################################################################
 ################### Parallel estimation Loop ################################
 #############################################################################
@@ -165,7 +196,8 @@ estimation_loop_par <- function(n_loop,
                                 cores,
                                 white_adjust,
                                 seed=NA,
-                                mincer_spec){
+                                mincer_spec,
+                                execute_uc){
   
   # Register cores
   registerDoParallel(cores = cores)
@@ -200,6 +232,7 @@ estimation_loop_par <- function(n_loop,
       mutate(Date = as.Date('2000-01-01') + 1:nrow(garchsimulation_df)) %>%
       rename(Return = V1)
     garchsimulation_zoo <- zoo(garchsimulation_df$Return, garchsimulation_df$Date)
+    #test <<- plot(garchsimulation_zoo)
     
     # Calculate GARCH model
     rolling_VaR_ES <- rollapply(garchsimulation_zoo,
@@ -252,11 +285,36 @@ estimation_loop_par <- function(n_loop,
       result_lst[[result_lst_names[j]]][['p0_1']] <- ifelse(p_values_vec[j] < 0.1, 1, 0)
     }
     result_lst[['n_obs_mincer']] <- n_obs_mincer
+    
+    # Calculate results for unconditional coverage test
+    if(execute_uc & !estimate){
+      
+      # Calculate cumulative violations
+      u <- pdist(distribution = dist_spec_est,
+                 q = VaR_ES_results_df[['Return']],
+                 mu = VaR_ES_results_df[['mu']],
+                 sigma = VaR_ES_results_df[['sigma']],
+                 skew = VaR_ES_results_df[['skew']],
+                 shape = VaR_ES_results_df[['shape']],
+                 lambda = VaR_ES_results_df[['lambda']])
+      Cum_Vio <- (1 / tolerance_lvl) * (tolerance_lvl - u) * ifelse(u <= tolerance_lvl, 1, 0)
+      
+      # Execute unconditional coverage backtest for ES
+      p_uc <- ES_uc_backtest(CumVio = Cum_Vio,
+                             tolerance_lvl = tolerance_lvl)
+      
+      # Store result
+      result_lst[['UC']][['p']] <- p_uc
+      result_lst[['UC']][['p0_01']] <- ifelse(p_uc < 0.01, 1, 0)
+      result_lst[['UC']][['p0_05']] <- ifelse(p_uc < 0.05, 1, 0)
+      result_lst[['UC']][['p0_1']] <- ifelse(p_uc < 0.1, 1, 0)
+    }
     result_lst
   }
 
   # Organize results
   result <- list()
+  mincer_spec <- ifelse(execute_uc & !estimate, c(mincer_spec, 'UC'), mincer_spec)
   for(mincer_reg_name in names(mincer_spec)){
     result[[mincer_reg_name]] <- list(p = vector(),
                                       p0_01 = vector(),
@@ -297,4 +355,17 @@ create_result_matrix <- function(result_lst){
     }
   }
   return(result_matrix)
+}
+
+#############################################################################
+################### Write results into txt file     #########################
+#############################################################################
+write_results_to_txt <- function(name,
+                                 txt_file){
+  matrix <- get(paste0(name, '_matrix'))
+  lst <- get(name)
+  
+  write(paste0('\n\n', toupper(gsub('result_','',name)), ':'), file = txt_file, append = TRUE)
+  write(paste0('Number of obs. in Mincer-Regressions: ',mean(lst[['n_obs_mincer']])), file = txt_file, append = TRUE)
+  capture.output(print(matrix), file = txt_file, append = TRUE)
 }
