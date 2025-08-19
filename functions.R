@@ -7,7 +7,8 @@ VaR_ES_forecast <- function(data_zoo,
                             dist_spec,
                             tolerance_lvl,
                             estimate,
-                            fixed_pars_est){
+                            fixed_pars_est,
+                            empirical){
   
   # Store last date
   last_date <- tail(index(data_zoo), 1)
@@ -85,25 +86,45 @@ VaR_ES_forecast <- function(data_zoo,
     mu <- fitted(garchforecast)
     sigma <- sigma(garchforecast)
     
-    # Function returns pth quantile of current distribution
-    pth_quantile <- function(p) {
-      q <- qdist(distribution = dist_spec,
-                 p = p,
-                 skew = skew,
-                 shape = shape,
-                 lambda = lambda)
-      return(q)
+    if(empirical){
+      # Empirical distribution
+      emp_dist <- as.vector(residuals(garchfit, standardize = TRUE))
+      
+      # pth quantile of empirical distribution
+      q_emp_dist <- quantile(emp_dist,
+                             probs = tolerance_lvl,
+                             na.rm = TRUE,
+                             names = FALSE,
+                             type = 8) # Approximately median unbiased regardless of distribution
+      
+      # Calculating standardized ES based on empirical distribution
+      standardized_ES <- mean(emp_dist[emp_dist <= q_emp_dist])
+      
+      # VaR and ES calculation
+      VaR <- mu + sigma * q_emp_dist
+      ES <- mu + sigma * standardized_ES
+      
+    } else{
+      # Function returns pth quantile of current distribution
+      pth_quantile <- function(p) {
+        q <- qdist(distribution = dist_spec,
+                   p = p,
+                   skew = skew,
+                   shape = shape,
+                   lambda = lambda)
+        return(q)
+      }
+      
+      # Calculate VaR
+      VaR <- mu + sigma * pth_quantile(p = tolerance_lvl)
+      
+      # Calculate ES
+      integrated <- integrate(pth_quantile,
+                              lower = 0,
+                              upper = tolerance_lvl)
+      integrated_value <- integrated[['value']]
+      ES <- mu + sigma / tolerance_lvl * integrated_value
     }
-    
-    # Calculate VaR
-    VaR <- mu + sigma * pth_quantile(p = tolerance_lvl)
-    
-    # Calculate ES
-    integrated <- integrate(pth_quantile,
-                            lower = 0,
-                            upper = tolerance_lvl)
-    integrated_value <- integrated[['value']]
-    ES <- mu + sigma / tolerance_lvl * integrated_value
     
     # Return results
     results <- data.frame(last_date = last_date,
@@ -177,6 +198,45 @@ ES_uc_backtest <- function(CumVio,
   return(p)
 }
 
+############################################################################################
+### Conditional coverage test for ES (no correction for parameter estimation effect)    ####
+############################################################################################
+ES_cc_backtest <- function(CumVio,
+                           tolerance_lvl,
+                           lags){
+  
+  # Extracting non-NA cumulative violations
+  not_na_Cum_Vio <- !is.na(CumVio)
+  H_hut <- CumVio[not_na_Cum_Vio]
+  
+  # Length of H_hut
+  n <- length(H_hut)
+  
+  # Variance of H_huts
+  gamma_n0 <- 1 / n * sum((H_hut - (tolerance_lvl / 2)) * (H_hut - (tolerance_lvl / 2)))
+  
+  # Vector with covariance between H_hut and j-laged H_hut
+  gamma_nj <- vector(length = lags)
+  
+  for(j in 1:lags){
+    gamma_nj[j] <- 1 / (n - j) * sum((H_hut[(j+1):n] - (tolerance_lvl / 2)) * (H_hut[1:(n-j)] - (tolerance_lvl / 2)))
+  }
+  
+  # Vector with correlations between H_hut and j-laged H_hut
+  rho_nj <- as.vector(gamma_nj / gamma_n0)
+  
+  # Test statistic calculation
+  C <- n * t(rho_nj) %*% diag(x = 1, nrow = lags) %*% rho_nj
+  
+  # p-value calculation
+  p <- pchisq(q = C,
+              df = lags,
+              lower.tail = FALSE)
+  
+  # Return p-value
+  return(p)
+}
+
 #############################################################################
 ################### Parallel estimation Loop ################################
 #############################################################################
@@ -197,7 +257,8 @@ estimation_loop_par <- function(n_loop,
                                 white_adjust,
                                 seed=NA,
                                 mincer_spec,
-                                execute_uc){
+                                execute_additional_tsts,
+                                empirical){
   
   # Register cores
   registerDoParallel(cores = cores)
@@ -243,7 +304,8 @@ estimation_loop_par <- function(n_loop,
                                                                   dist_spec = dist_spec_est,
                                                                   tolerance_lvl = tolerance_lvl,
                                                                   estimate = estimate,
-                                                                  fixed_pars_est = fixed_pars_est),
+                                                                  fixed_pars_est = fixed_pars_est,
+                                                                  empirical=empirical),
                                 align = 'right',
                                 coredata = FALSE)
 
@@ -287,7 +349,7 @@ estimation_loop_par <- function(n_loop,
     result_lst[['n_obs_mincer']] <- n_obs_mincer
     
     # Calculate results for unconditional coverage test
-    if(execute_uc & !estimate){
+    if(execute_additional_tsts & !estimate){
       
       # Calculate cumulative violations
       u <- pdist(distribution = dist_spec_est,
@@ -299,23 +361,44 @@ estimation_loop_par <- function(n_loop,
                  lambda = VaR_ES_results_df[['lambda']])
       Cum_Vio <- (1 / tolerance_lvl) * (tolerance_lvl - u) * ifelse(u <= tolerance_lvl, 1, 0)
       
-      # Execute unconditional coverage backtest for ES
+      # Execute unconditional and conditional coverage backtest for ES
       p_uc <- ES_uc_backtest(CumVio = Cum_Vio,
                              tolerance_lvl = tolerance_lvl)
+      
+      p_cc <- ES_cc_backtest(CumVio = Cum_Vio,
+                             tolerance_lvl = tolerance_lvl,
+                             lags = 5)
+      
+      # Execute ESR backtest
+      p_esr <- esr_backtest(r = VaR_ES_results_df[['Return']],
+                            q = VaR_ES_results_df[['VaR']],
+                            e = VaR_ES_results_df[['ES']],
+                            alpha = tolerance_lvl,
+                            version = 2)[['pvalue_twosided_asymptotic']]
       
       # Store result
       result_lst[['UC']][['p']] <- p_uc
       result_lst[['UC']][['p0_01']] <- ifelse(p_uc < 0.01, 1, 0)
       result_lst[['UC']][['p0_05']] <- ifelse(p_uc < 0.05, 1, 0)
       result_lst[['UC']][['p0_1']] <- ifelse(p_uc < 0.1, 1, 0)
+      
+      result_lst[['CC']][['p']] <- p_cc
+      result_lst[['CC']][['p0_01']] <- ifelse(p_cc < 0.01, 1, 0)
+      result_lst[['CC']][['p0_05']] <- ifelse(p_cc < 0.05, 1, 0)
+      result_lst[['CC']][['p0_1']] <- ifelse(p_cc < 0.1, 1, 0)
+      
+      result_lst[['ESR']][['p']] <- p_esr
+      result_lst[['ESR']][['p0_01']] <- ifelse(p_esr < 0.01, 1, 0)
+      result_lst[['ESR']][['p0_05']] <- ifelse(p_esr < 0.05, 1, 0)
+      result_lst[['ESR']][['p0_1']] <- ifelse(p_esr < 0.1, 1, 0)
     }
     result_lst
   }
 
   # Organize results
   result <- list()
-  mincer_spec <- ifelse(execute_uc & !estimate, c(mincer_spec, 'UC'), mincer_spec)
-  for(mincer_reg_name in names(mincer_spec)){
+  mincer_spec_names <- ifelse(execute_additional_tsts & !estimate, c(names(mincer_spec), 'UC', 'CC', 'ESR'), names(mincer_spec))
+  for(mincer_reg_name in mincer_spec_names){
     result[[mincer_reg_name]] <- list(p = vector(),
                                       p0_01 = vector(),
                                       p0_05 = vector(),
