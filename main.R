@@ -6,285 +6,173 @@ if (dev.cur() != 1) {
 cat('\14')
 
 # Load libraries
-#install.packages('rugarch') not installed
-#install.packages('tidyverse')
-#install.packages('zoo')
-#install.packages('sandwich')
-#install.packages('lmtest')
-#install.packages('foreach')
-#install.packages('doParallel')
-#install.packages('car')
-#install.packages('esback')
-#renv::install('numDeriv')
-#install.packages('progressr')
-#library(progressr)
+#renv::install('tibble')
+#renv::install('dplyr')
+#renv::install('purrr')
+#renv::install('rugarch')
+#renv::install('zoo')
+#renv::install('foreach')
+#renv::install('doParallel')
+
+library(tibble)
+library(dplyr)
+library(purrr)
 library(rugarch)
-library(tidyverse)
 library(zoo)
-library(sandwich)
-library(lmtest)
 library(foreach)
 library(doParallel)
-library(car)
-library(esback)
-library(numDeriv)
 
 source('functions.R')
+
+# Create process folders if they dont exist
+if (!dir.exists('run_logs')){
+  dir.create('run_logs',
+             recursive = TRUE)
+}
+if (!dir.exists('results')){
+  dir.create('results',
+             recursive = TRUE)
+}
 
 #############################################
 ########### Global parameters ###############
 #############################################
-result_txt_file = 'results.txt'
-result_latex_file = 'results_latex.txt'
+result_txt_file = 'results/results.txt'
+result_latex_file = 'results/results_latex.txt'
 tolerance_lvl = 0.05
 n_loop_est = 1000
 n_loop_fix = 1000
-oos_window_est = 5000#10000
-oos_window_fix = 5000#10000
-est_window = 750
+oos_window_est = 5000
+oos_window_fix = 1000#0
+est_window = 750#2000
 cores = 100#detectCores()
-seed = 78#5778#5930
-power_loops = c(1,2)
+seed = 78
+sim = 0
+variant = 1
 white_adjust = c('hc3', FALSE)
 execute_additional_tsts = TRUE
 lags_es_cc = 5
-empirical = FALSE
+n_boot_de = 2000
+empirical = TRUE
+estimation = FALSE
 
-################################################
-########### Size loop parameters ###############
-################################################
 
-# Simulation functional parameters
-omega_size = 0.005
-alpha1_size = 0.05
-beta1_size = 0.94
+########################################################
+########### Simulation specifications ##################
+########################################################
 
-# Simulation specifications
-var_spec_sim_size = list(model = 'sGARCH',garchOrder = c(1,1))
-mean_spec_sim_size = list(armaOrder = c(0,0))
-dist_spec_sim_size = 'norm'
-fixed_pars_sim_size = list(mu = 0,
-                           omega = omega_size,
-                           alpha1 = alpha1_size,
-                           beta1 = beta1_size)
+# Sim 0
+var_spec_sim_0 = list(model = 'sGARCH',garchOrder = c(1,1))
+mean_spec_sim_0 = list(armaOrder = c(0,0))
+dist_spec_sim_0 = 'norm'
+fixed_pars_sim_0 = list(mu = 0,
+                        omega = 0.005,
+                        alpha1 = 0.05,
+                        beta1 = 0.94)
 
-# Estimation parameters
-var_spec_est_size = var_spec_sim_size
-mean_spec_est_size = mean_spec_sim_size
-dist_spec_est_size = dist_spec_sim_size
-fixed_pars_est_size = fixed_pars_sim_size
+# Sim 1
+var_spec_sim_1 = list(model = 'gjrGARCH', garchOrder = c(1, 1))
+mean_spec_sim_1 = list(armaOrder = c(0,0))
+dist_spec_sim_1 = 'norm'
+fixed_pars_sim_1 = list(mu = 0,
+                        omega = 0.005,
+                        alpha1 = 0.03,
+                        beta1 = 0.94,
+                        gamma1 = 0.04)
 
-###################################################
-########### Power loop 1 parameters ###############
-###################################################
+# Sim 2
+var_spec_sim_2 = list(model = 'gjrGARCH', garchOrder = c(1, 1))
+mean_spec_sim_2 = list(armaOrder = c(0,0))
+dist_spec_sim_2 = 'norm'
+fixed_pars_sim_2 = list(mu = 0,
+                        omega = 0.005,
+                        alpha1 = 0.01,
+                        beta1 = 0.94,
+                        gamma1 = 0.08)
 
-# Simulation functional parameters
-omega_power_1 = 0.005
-alpha1_power_1 = 0.03
-beta1_power_1 = 0.94
-gamma1_power_1 = 0.04
+# Sim 3
+var_spec_sim_3 = list(model = 'sGARCH',garchOrder = c(1,1))
+mean_spec_sim_3 = list(armaOrder = c(0,0))
+dist_spec_sim_3 = 'std'
+fixed_pars_sim_3 = list(mu = 0,
+                        omega = 0.005,
+                        alpha1 = 0.05,
+                        beta1 = 0.94,
+                        shape = 4)
 
-# Simulation specifications
-var_spec_sim_power_1 = list(model = 'gjrGARCH', garchOrder = c(1, 1))
-mean_spec_sim_power_1 = list(armaOrder = c(0,0))
-dist_spec_sim_power_1 = 'norm'
-fixed_pars_sim_power_1 = list(mu = 0,
-                              omega = omega_power_1,
-                              alpha1 = alpha1_power_1,
-                              beta1 = beta1_power_1,
-                              gamma1 = gamma1_power_1)
+# Sim 4
+var_spec_sim_4 = list(model = 'gjrGARCH', garchOrder = c(1, 1))
+mean_spec_sim_4 = list(armaOrder = c(0,0))
+dist_spec_sim_4 = 'std'
+fixed_pars_sim_4 = list(mu = 0,
+                        omega = 0.005,
+                        alpha1 = 0.03,
+                        beta1 = 0.94,
+                        gamma1 = 0.04,
+                        shape = 4)
 
-# Estimation parameters
-var_spec_est_power_1 = list(model = 'sGARCH',garchOrder = c(1,1))
-mean_spec_est_power_1 = mean_spec_sim_power_1
-dist_spec_est_power_1 = dist_spec_sim_power_1
-fixed_pars_est_power_1 = fixed_pars_sim_size
+# Sim 5
+var_spec_sim_5 = list(model = 'gjrGARCH', garchOrder = c(1, 1))
+mean_spec_sim_5 = list(armaOrder = c(0,0))
+dist_spec_sim_5 = 'std'
+fixed_pars_sim_5 = list(mu = 0,
+                        omega = 0.005,
+                        alpha1 = 0.01,
+                        beta1 = 0.94,
+                        gamma1 = 0.08,
+                        shape = 4)
 
-###################################################
-########### Power loop 2 parameters ###############
-###################################################
+# Sim 6
+var_spec_sim_6 = list(model = 'sGARCH',garchOrder = c(1,1))
+mean_spec_sim_6 = list(armaOrder = c(0,0))
+dist_spec_sim_6 = 'std'
+fixed_pars_sim_6 = list(mu = 0,
+                        omega = 0.005,
+                        alpha1 = 0.05,
+                        beta1 = 0.94,
+                        shape = 8)
 
-# Simulation functional parameters
-omega_power_2 = 0.005
-alpha1_power_2 = 0.01
-beta1_power_2 = 0.94
-gamma1_power_2 = 0.08
+# Sim 7
+var_spec_sim_7 = list(model = 'sGARCH',garchOrder = c(1,1))
+mean_spec_sim_7 = list(armaOrder = c(0,0))
+dist_spec_sim_7 = 'std'
+fixed_pars_sim_7 = list(mu = 0,
+                        omega = 0.005,
+                        alpha1 = 0.05,
+                        beta1 = 0.94,
+                        shape = 12)
 
-# Simulation specifications
-var_spec_sim_power_2 = list(model = 'gjrGARCH', garchOrder = c(1, 1))
-mean_spec_sim_power_2 = list(armaOrder = c(0,0))
-dist_spec_sim_power_2 = 'norm'
-fixed_pars_sim_power_2 = list(mu = 0,
-                              omega = omega_power_2,
-                              alpha1 = alpha1_power_2,
-                              beta1 = beta1_power_2,
-                              gamma1 = gamma1_power_2)
 
-# Estimation parameters
-var_spec_est_power_2 = list(model = 'sGARCH',garchOrder = c(1,1))
-mean_spec_est_power_2 = mean_spec_sim_power_2
-dist_spec_est_power_2 = dist_spec_sim_power_2
-fixed_pars_est_power_2 = fixed_pars_sim_size
+########################################################
+########### Estimation specifications ##################
+########################################################
 
-###################################################
-########### Power loop 3 parameters ###############
-###################################################
+# Variant 1 (also for cases without parameter estimation -> fixed parameters are specified)
+var_spec_est_1 = list(model = 'sGARCH',garchOrder = c(1,1))
+mean_spec_est_1 = list(armaOrder = c(0,0))
+dist_spec_est_1 = 'norm'
+fixed_pars_est_1 = list(mu = 0,
+                        omega = 0.005,
+                        alpha1 = 0.05,
+                        beta1 = 0.94)
 
-# Simulation functional parameter
-omega_power_3 = 0.005
-alpha1_power_3 = 0.05
-beta1_power_3 = 0.94
-shape_power_3 = 4
+# Variant 2
+var_spec_est_2 = list(model = 'gjrGARCH',garchOrder = c(1,1))
+mean_spec_est_2 = list(armaOrder = c(0,0))
+dist_spec_est_2 = 'norm'
+fixed_pars_est_2 = NA
 
-# Simulation specifications
-var_spec_sim_power_3 = list(model = 'sGARCH',garchOrder = c(1,1))
-mean_spec_sim_power_3 = list(armaOrder = c(0,0))
-dist_spec_sim_power_3 = 'std'
-fixed_pars_sim_power_3 = list(mu = 0,
-                              omega = omega_power_3,
-                              alpha1 = alpha1_power_3,
-                              beta1 = beta1_power_3,
-                              shape = shape_power_3)
+# Variant 3
+var_spec_est_3 = list(model = 'sGARCH',garchOrder = c(1,1))
+mean_spec_est_3 = list(armaOrder = c(0,0))
+dist_spec_est_3 = 'std'
+fixed_pars_est_3 = NA
 
-# Estimation parameters
-var_spec_est_power_3 = var_spec_sim_power_3
-mean_spec_est_power_3 = mean_spec_sim_power_3
-dist_spec_est_power_3 = 'norm'
-fixed_pars_est_power_3 = fixed_pars_sim_size
-
-###################################################
-########### Power loop 4 parameters ###############
-###################################################
-
-# Simulation functional parameter
-omega_power_4 = 0.005
-alpha1_power_4 = 0.03
-beta1_power_4 = 0.94
-gamma1_power_4 = 0.04
-shape_power_4 = 4
-
-# Simulation specifications
-var_spec_sim_power_4 = list(model = 'gjrGARCH', garchOrder = c(1, 1))
-mean_spec_sim_power_4 = list(armaOrder = c(0,0))
-dist_spec_sim_power_4 = 'std'
-fixed_pars_sim_power_4 = list(mu = 0,
-                              omega = omega_power_4,
-                              alpha1 = alpha1_power_4,
-                              beta1 = beta1_power_4,
-                              gamma1 = gamma1_power_4,
-                              shape = shape_power_4)
-
-# Estimation parameters
-var_spec_est_power_4 = list(model = 'sGARCH',garchOrder = c(1,1))
-mean_spec_est_power_4 = mean_spec_sim_power_4
-dist_spec_est_power_4 = 'norm'
-fixed_pars_est_power_4 = fixed_pars_sim_size
-
-###################################################
-########### Power loop 5 parameters ###############
-###################################################
-
-# Simulation functional parameter
-omega_power_5 = 0.005
-alpha1_power_5 = 0.01
-beta1_power_5 = 0.94
-gamma1_power_5 = 0.08
-shape_power_5 = 4
-
-# Simulation specifications
-var_spec_sim_power_5 = list(model = 'gjrGARCH', garchOrder = c(1, 1))
-mean_spec_sim_power_5 = list(armaOrder = c(0,0))
-dist_spec_sim_power_5 = 'std'
-fixed_pars_sim_power_5 = list(mu = 0,
-                              omega = omega_power_5,
-                              alpha1 = alpha1_power_5,
-                              beta1 = beta1_power_5,
-                              gamma1 = gamma1_power_5,
-                              shape = shape_power_5)
-
-# Estimation parameters
-var_spec_est_power_5 = list(model = 'sGARCH',garchOrder = c(1,1))
-mean_spec_est_power_5 = mean_spec_sim_power_5
-dist_spec_est_power_5 = 'norm'
-fixed_pars_est_power_5 = fixed_pars_sim_size
-
-###################################################
-########### Power loop 6 parameters ###############
-###################################################
-
-# Simulation functional parameter
-omega_power_6 = 0.005
-alpha1_power_6 = 0.05
-beta1_power_6 = 0.94
-shape_power_6 = 8
-
-# Simulation specifications
-var_spec_sim_power_6 = list(model = 'sGARCH',garchOrder = c(1,1))
-mean_spec_sim_power_6 = list(armaOrder = c(0,0))
-dist_spec_sim_power_6 = 'std'
-fixed_pars_sim_power_6 = list(mu = 0,
-                              omega = omega_power_6,
-                              alpha1 = alpha1_power_6,
-                              beta1 = beta1_power_6,
-                              shape = shape_power_6)
-
-# Estimation parameters
-var_spec_est_power_6 = var_spec_sim_power_6
-mean_spec_est_power_6 = mean_spec_sim_power_6
-dist_spec_est_power_6 = 'norm'
-fixed_pars_est_power_6 = fixed_pars_sim_size
-
-###################################################
-########### Power loop 7 parameters ###############
-###################################################
-
-# Simulation functional parameter
-omega_power_7 = 0.005
-alpha1_power_7 = 0.05
-beta1_power_7 = 0.94
-shape_power_7 = 12
-
-# Simulation specifications
-var_spec_sim_power_7 = list(model = 'sGARCH',garchOrder = c(1,1))
-mean_spec_sim_power_7 = list(armaOrder = c(0,0))
-dist_spec_sim_power_7 = 'std'
-fixed_pars_sim_power_7 = list(mu = 0,
-                              omega = omega_power_7,
-                              alpha1 = alpha1_power_7,
-                              beta1 = beta1_power_7,
-                              shape = shape_power_7)
-
-# Estimation parameters
-var_spec_est_power_7 = var_spec_sim_power_7
-mean_spec_est_power_7 = mean_spec_sim_power_7
-dist_spec_est_power_7 = 'norm'
-fixed_pars_est_power_7 = fixed_pars_sim_size
-
-###################################################
-########### Size loop 2 parameters ###############
-###################################################
-
-# Simulation functional parameter
-omega_size_2 = 0.005
-alpha1_size_2 = 0.05
-beta1_size_2 = 0.94
-shape_size_2 = 4
-
-# Simulation specifications
-var_spec_sim_size_2 = list(model = 'sGARCH',garchOrder = c(1,1))
-mean_spec_sim_size_2 = list(armaOrder = c(0,0))
-dist_spec_sim_size_2 = 'std'
-fixed_pars_sim_size_2 = list(mu = 0,
-                             omega = omega_size_2,
-                             alpha1 = alpha1_size_2,
-                             beta1 = beta1_size_2,
-                             shape = shape_size_2)
-
-# Estimation parameters
-var_spec_est_size_2 = var_spec_sim_size_2
-mean_spec_est_size_2 = mean_spec_sim_size_2
-dist_spec_est_size_2 = dist_spec_sim_size_2
-fixed_pars_est_size_2 = fixed_pars_sim_size
+# Variant 4
+var_spec_est_4 = list(model = 'gjrGARCH',garchOrder = c(1,1))
+mean_spec_est_4 = list(armaOrder = c(0,0))
+dist_spec_est_4 = 'std'
+fixed_pars_est_4 = NA
 
 
 ###########################################################
@@ -315,7 +203,7 @@ mincer_spec <- list(simple_shortfall = list(formula = shortfall ~ 1,
                     #                       h0 = c('(Intercept) = 0', 'variance_t_min_1 = 0', 'residual_t_min_1_quadr = 0', 'residual_t_min_1_quadr_lower_0 = 0')),
                     # full_return = list(formula = Return ~ variance_t_min_1 + residual_t_min_1_quadr + residual_t_min_1_quadr_lower_0 + ES,
                     #                    h0 = c('(Intercept) = 0', 'variance_t_min_1 = 0', 'residual_t_min_1_quadr = 0', 'residual_t_min_1_quadr_lower_0 = 0', 'ES = 1'))
-                    )
+)
 
 
 ##########################################
@@ -323,409 +211,94 @@ mincer_spec <- list(simple_shortfall = list(formula = shortfall ~ 1,
 ##########################################
 
 # Write date and time of execution start into txt result file
-write(paste0('\n\n', Sys.time()), file = result_txt_file, append = TRUE)
-write(paste0('\nEmpirical distribution = ', empirical), file = result_txt_file, append = TRUE)
+write(paste0('\n\nExecution started: ', Sys.time(), '\n\n'),
+      file = result_txt_file,
+      append = TRUE)
 
-# Write date and time of execution start into latex result file if specified
-if(!is.na(result_latex_file)){
-  write(paste0('\n\n', Sys.time()), file = result_latex_file, append = TRUE)
-  write(paste0('\nEmpirical distribution = ', empirical), file = result_latex_file, append = TRUE)
-}
+# Write date and time of execution start into latex results file
+write(paste0('\n\nExecution started: ', Sys.time(), '\n\n'),
+      file = result_latex_file,
+      append = TRUE)
 
-# Size loops execution without estimation
-result_size_fix <- estimation_loop_par(n_loop=n_loop_fix,
-                                       est_window=est_window,
-                                       oos_window=oos_window_fix,
-                                       tolerance_lvl=tolerance_lvl,
-                                       var_spec_sim=var_spec_sim_size,
-                                       mean_spec_sim=mean_spec_sim_size,
-                                       dist_spec_sim=dist_spec_sim_size,
-                                       fixed_pars_sim=fixed_pars_sim_size,
-                                       estimate=FALSE,
-                                       par_corr=FALSE,
-                                       var_spec_est=var_spec_est_size,
-                                       mean_spec_est=mean_spec_est_size,
-                                       dist_spec_est=dist_spec_est_size,
-                                       fixed_pars_est=fixed_pars_est_size,
-                                       cores=cores,
-                                       white_adjust=white_adjust,
-                                       seed=seed,
-                                       mincer_spec=mincer_spec,
-                                       execute_additional_tsts=execute_additional_tsts,
-                                       lags_es_cc=lags_es_cc,
-                                       empirical=empirical)
-result_size_fix_matrix <- create_result_matrix(result_size_fix)
-write_results_to_txt(name = 'result_size_fix', txt_file = result_txt_file)
-write_results_to_latex(name = 'result_size_fix', txt_file = result_latex_file, double_hline = ifelse(execute_additional_tsts, length(mincer_spec), NA))
-#TEST
-saveRDS(result_size_fix, file = 'result_size_fix.RData')
+# Initiate progress_information.txt
+write(paste0('Execution started: ', Sys.time(), '\n\n'),
+      file = 'run_logs/progress_information.txt',
+      append = FALSE)
 
+# Initiate solver_problems.txt
+write('Solver problems (Check functions.R for location of problems encoded in numbers):\n\n',
+      file = 'run_logs/solver_problems.txt',
+      append = FALSE)
 
-# Size loops execution with estimation
-for(parc in c(FALSE, TRUE)){#change
-  write(paste0('\npar_corr = ', parc), file = result_txt_file, append = TRUE)#change
-  write(paste0('\n\n', Sys.time()), file = result_txt_file, append = TRUE)#change
+# Initiate NA_information.txt
+write(paste0('Execution started: ', Sys.time(), '\n\n'),
+      file = 'run_logs/NA_information.txt',
+      append = FALSE)
 
-  result_size_est <- estimation_loop_par(n_loop=n_loop_est,
-                                         est_window=est_window,
-                                         oos_window=oos_window_est,
-                                         tolerance_lvl=tolerance_lvl,
-                                         var_spec_sim=var_spec_sim_size,
-                                         mean_spec_sim=mean_spec_sim_size,
-                                         dist_spec_sim=dist_spec_sim_size,
-                                         fixed_pars_sim=fixed_pars_sim_size,
-                                         estimate=TRUE,
-                                         par_corr=parc,#change
-                                         var_spec_est=var_spec_est_size,
-                                         mean_spec_est=mean_spec_est_size,
-                                         dist_spec_est=dist_spec_est_size,
-                                         fixed_pars_est=NA,
-                                         cores=cores,
-                                         white_adjust=white_adjust,
-                                         seed=seed,
-                                         mincer_spec=mincer_spec,
-                                         execute_additional_tsts=execute_additional_tsts,
-                                         lags_es_cc=lags_es_cc,
-                                         empirical=empirical)
-  result_size_est_matrix <- create_result_matrix(result_size_est)
-  write_results_to_txt(name = 'result_size_est', txt_file = result_txt_file)
-  write_results_to_latex(name = 'result_size_est', txt_file = result_latex_file, double_hline = ifelse(execute_additional_tsts, length(mincer_spec), NA))
+# Loop executions
+for(i in sim){
   
-  ##TEST
-  saveRDS(result_size_est, file = paste0('result_size_est_', parc, '.RData'))
+  # Progress information: Current simulation
+  write(paste0('\nSimulation ', i, ':\n'),
+        file = 'run_logs/progress_information.txt',
+        append = TRUE)
+  
+  # Current simulation for solver_problems.txt
+  write(paste0('\nSimulation ', i, ':\n'),
+        file = 'run_logs/solver_problems.txt',
+        append = TRUE)
+  
+  # Current simulation for NA_information.txt
+  write(paste0('\nSimulation ', i, ':\n'),
+        file = 'run_logs/NA_information.txt',
+        append = TRUE)
+  
+  result_lst <- estimation_loop_par(n_loop = ifelse(estimation, n_loop_est, n_loop_fix),
+                                    est_window = est_window,
+                                    oos_window = ifelse(estimation, oos_window_est, oos_window_fix),
+                                    tolerance_lvl = tolerance_lvl,
+                                    var_spec_sim = get(paste0('var_spec_sim_', i)),
+                                    mean_spec_sim = get(paste0('mean_spec_sim_', i)),
+                                    dist_spec_sim = get(paste0('dist_spec_sim_', i)),
+                                    fixed_pars_sim = get(paste0('fixed_pars_sim_', i)),
+                                    estimate = estimation,
+                                    par_corr = estimation,
+                                    var_spec_est = get(paste0('var_spec_est_', variant)),
+                                    mean_spec_est = get(paste0('mean_spec_est_', variant)),
+                                    dist_spec_est = get(paste0('dist_spec_est_', variant)),
+                                    fixed_pars_est = get(paste0('fixed_pars_est_', variant)),
+                                    cores = cores,
+                                    white_adjust = white_adjust,
+                                    seed = seed,
+                                    mincer_spec = mincer_spec,
+                                    execute_additional_tsts = execute_additional_tsts,
+                                    lags_es_cc = lags_es_cc,
+                                    n_boot_de = n_boot_de,
+                                    empirical = empirical)
+  
+  # Number of NAs in UC_par_corr and CC_par_corr printed to NA_information.txt
+  if(estimation){
+    write(paste0('Number of NAs in UC_par_corr: ', sum(is.na(result_lst[['UC_par_corr']][[white_adjust[1]]])), '\n'),
+          file = 'run_logs/NA_information.txt',
+          append = TRUE)
+    write(paste0('Number of NAs in CC_par_corr: ', sum(is.na(result_lst[['CC_par_corr']][[white_adjust[1]]])), '\n'),
+          file = 'run_logs/NA_information.txt',
+          append = TRUE)
+  }
+
+  result_matrix <- create_result_matrix(result_lst = result_lst,
+                                        na_rm = TRUE)
+  
+  assign(paste0('result_sim_', i, '_var_', variant, ifelse(estimation, '_est_', '_fix_'), ifelse(empirical, 'emp', 'par')), result_lst)
+  assign(paste0('result_sim_', i, '_var_', variant, ifelse(estimation, '_est_', '_fix_'), ifelse(empirical, 'emp', 'par'), '_matrix'), result_matrix)
+  
+  write_results_to_txt(name = paste0('result_sim_', i, '_var_', variant, ifelse(estimation, '_est_', '_fix_'), ifelse(empirical, 'emp', 'par')),
+                       txt_file = result_txt_file)
+  write_results_to_latex(name = paste0('result_sim_', i, '_var_', variant, ifelse(estimation, '_est_', '_fix_'), ifelse(empirical, 'emp', 'par')),
+                         txt_file = result_latex_file,
+                         double_hline = ifelse(execute_additional_tsts, length(mincer_spec), NA))
+  
+  saveRDS(result_lst,
+          file = paste0('results/result_sim_', i, '_var_', variant, ifelse(estimation, '_est_', '_fix_'), ifelse(empirical, 'emp', 'par'), '.RData'))
 }
-# 
-# # Power loop executions without estimation
-# for(i in power_loops){
-#   result_power_i_fix <- estimation_loop_par(n_loop=n_loop_fix,
-#                                             est_window=est_window,
-#                                             oos_window=oos_window_fix,
-#                                             tolerance_lvl=tolerance_lvl,
-#                                             var_spec_sim=get(paste0('var_spec_sim_power_', i)),
-#                                             mean_spec_sim=get(paste0('mean_spec_sim_power_', i)),
-#                                             dist_spec_sim=get(paste0('dist_spec_sim_power_', i)),
-#                                             fixed_pars_sim=get(paste0('fixed_pars_sim_power_', i)),
-#                                             estimate=FALSE,
-#                                             par_corr=FALSE,
-#                                             var_spec_est=get(paste0('var_spec_est_power_', i)),
-#                                             mean_spec_est=get(paste0('mean_spec_est_power_', i)),
-#                                             dist_spec_est=get(paste0('dist_spec_est_power_', i)),
-#                                             fixed_pars_est=get(paste0('fixed_pars_est_power_', i)),
-#                                             cores=cores,
-#                                             white_adjust=white_adjust,
-#                                             seed=seed,
-#                                             mincer_spec=mincer_spec,
-#                                             execute_additional_tsts=execute_additional_tsts,
-#                                             lags_es_cc=lags_es_cc,
-#                                             empirical=empirical)
-#   
-#   result_power_i_fix_matrix <- create_result_matrix(result_power_i_fix)
-# 
-#   assign(paste0('result_power_', i, '_fix'), result_power_i_fix)
-#   assign(paste0('result_power_', i, '_fix_matrix'), result_power_i_fix_matrix)
-# 
-#   write_results_to_txt(name = paste0('result_power_', i, '_fix'), txt_file = result_txt_file)
-#   write_results_to_latex(name = paste0('result_power_', i, '_fix'), txt_file = result_latex_file, double_hline = ifelse(execute_additional_tsts, length(mincer_spec), NA))
-# }
-# rm(result_power_i_fix_matrix, result_power_i_fix, i)
-# 
-# 
-# # Power loops executions with estimation
-# for(i in power_loops){
-#   result_power_i_est <- estimation_loop_par(n_loop=n_loop_est,
-#                                             est_window=est_window,
-#                                             oos_window=oos_window_est,
-#                                             tolerance_lvl=tolerance_lvl,
-#                                             var_spec_sim=get(paste0('var_spec_sim_power_', i)),
-#                                             mean_spec_sim=get(paste0('mean_spec_sim_power_', i)),
-#                                             dist_spec_sim=get(paste0('dist_spec_sim_power_', i)),
-#                                             fixed_pars_sim=get(paste0('fixed_pars_sim_power_', i)),
-#                                             estimate=TRUE,
-#                                             par_corr=TRUE,
-#                                             var_spec_est=get(paste0('var_spec_est_power_', i)),
-#                                             mean_spec_est=get(paste0('mean_spec_est_power_', i)),
-#                                             dist_spec_est=get(paste0('dist_spec_est_power_', i)),
-#                                             fixed_pars_est=NA,
-#                                             cores=cores,
-#                                             white_adjust=white_adjust,
-#                                             seed=seed,
-#                                             mincer_spec=mincer_spec,
-#                                             execute_additional_tsts=execute_additional_tsts,
-#                                             lags_es_cc=lags_es_cc,
-#                                             empirical=empirical)
-# 
-#   result_power_i_est_matrix <- create_result_matrix(result_power_i_est)
-# 
-#   assign(paste0('result_power_', i, '_est'), result_power_i_est)
-#   assign(paste0('result_power_', i, '_est_matrix'), result_power_i_est_matrix)
-# 
-#   write_results_to_txt(name = paste0('result_power_', i, '_est'), txt_file = result_txt_file)
-#   write_results_to_latex(name = paste0('result_power_', i, '_est'), txt_file = result_latex_file, double_hline = ifelse(execute_additional_tsts, length(mincer_spec), NA))
-# }
-# rm(result_power_i_est_matrix, result_power_i_est, i)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Size loops 2 without estimated parameters
-# for(wa in white_adjust){
-#   result_size_fix_wa <- estimation_loop_par(n_loop=n_loop_fix,
-#                                             est_window=est_window,
-#                                             oos_window=oos_window_fix,
-#                                             tolerance_lvl=tolerance_lvl,
-#                                             var_spec_sim=var_spec_sim_size_2,
-#                                             mean_spec_sim=mean_spec_sim_size_2,
-#                                             dist_spec_sim=dist_spec_sim_size_2,
-#                                             fixed_pars_sim=fixed_pars_sim_size_2,
-#                                             estimate=FALSE,
-#                                             par_corr=FALSE,
-#                                             var_spec_est=var_spec_est_size_2,
-#                                             mean_spec_est=mean_spec_est_size_2,
-#                                             dist_spec_est=dist_spec_est_size_2,
-#                                             fixed_pars_est=fixed_pars_sim_size_2,
-#                                             cores=cores,
-#                                             white_adjust=wa,
-#                                             seed=seed,
-#                                             mincer_spec=mincer_spec,
-#                                             execute_additional_tsts=execute_additional_tsts,
-#                                             lags_es_cc=lags_es_cc,
-#                                             empirical=empirical)
-#   result_size_fix_wa_matrix <- create_result_matrix(result_size_fix_wa)
-# 
-#   assign(paste0('result_size_2_fix_', wa), result_size_fix_wa)
-#   assign(paste0('result_size_2_fix_', wa, '_matrix'), result_size_fix_wa_matrix)
-# 
-#   write_results_to_txt(name = paste0('result_size_2_fix_', wa), txt_file = result_txt_file)
-# }
-# rm(result_size_fix_wa, wa, result_size_fix_wa_matrix)
-
-
-# empirical=empirical NEEDS TO BE ADDED
-
-# Power loop 1 without estimated parameters (with HC3)
-# result_power_1_fix_hc3 <- estimation_loop_par(n_loop=n_loop_fix,
-#                                               est_window=est_window,
-#                                               oos_window=oos_window_fix,
-#                                               tolerance_lvl=tolerance_lvl,
-#                                               var_spec_sim=var_spec_sim_power_1,
-#                                               mean_spec_sim=mean_spec_sim_power_1,
-#                                               dist_spec_sim=dist_spec_sim_power_1,
-#                                               fixed_pars_sim=fixed_pars_sim_power_1,
-#                                               estimate=FALSE,
-#                                               var_spec_est=var_spec_est_power_1,
-#                                               mean_spec_est=mean_spec_est_power_1,
-#                                               dist_spec_est=dist_spec_est_power_1,
-#                                               fixed_pars_est=fixed_pars_sim_size,
-#                                               cores=cores,
-#                                               white_adjust='hc3',
-#                                               seed=seed,
-#                                               mincer_spec=mincer_spec,
-#                                               execute_additional_tsts=TRUE)
-# result_power_1_fix_hc3_matrix <- create_result_matrix(result_power_1_fix_hc3)
-# write_results_to_txt(name = 'result_power_1_fix_hc3', txt_file = result_txt_file)
-# 
-# 
-# # Power loop 1 without estimated parameters (with HC0)
-# result_power_1_fix_hc0 <- estimation_loop_par(n_loop=n_loop_fix,
-#                                               est_window=est_window,
-#                                               oos_window=oos_window_fix,
-#                                               tolerance_lvl=tolerance_lvl,
-#                                               var_spec_sim=var_spec_sim_power_1,
-#                                               mean_spec_sim=mean_spec_sim_power_1,
-#                                               dist_spec_sim=dist_spec_sim_power_1,
-#                                               fixed_pars_sim=fixed_pars_sim_power_1,
-#                                               estimate=FALSE,
-#                                               var_spec_est=var_spec_est_power_1,
-#                                               mean_spec_est=mean_spec_est_power_1,
-#                                               dist_spec_est=dist_spec_est_power_1,
-#                                               fixed_pars_est=fixed_pars_sim_size,
-#                                               cores=cores,
-#                                               white_adjust='hc0',
-#                                               seed=seed,
-#                                               mincer_spec=mincer_spec,
-#                                               execute_additional_tsts=TRUE)
-# result_power_1_fix_hc0_matrix <- create_result_matrix(result_power_1_fix_hc0)
-# write_results_to_txt(name = 'result_power_1_fix_hc0', txt_file = result_txt_file)
-# 
-# 
-# 
-# # Power loop 2 without estimated parameters (with HC3)
-# result_power_2_fix_hc3 <- estimation_loop_par(n_loop=n_loop_fix,
-#                                               est_window=est_window,
-#                                               oos_window=oos_window_fix,
-#                                               tolerance_lvl=tolerance_lvl,
-#                                               var_spec_sim=var_spec_sim_power_2,
-#                                               mean_spec_sim=mean_spec_sim_power_2,
-#                                               dist_spec_sim=dist_spec_sim_power_2,
-#                                               fixed_pars_sim=fixed_pars_sim_power_2,
-#                                               estimate=FALSE,
-#                                               var_spec_est=var_spec_est_power_2,
-#                                               mean_spec_est=mean_spec_est_power_2,
-#                                               dist_spec_est=dist_spec_est_power_2,
-#                                               fixed_pars_est=fixed_pars_sim_size,
-#                                               cores=cores,
-#                                               white_adjust='hc3',
-#                                               seed=seed,
-#                                               mincer_spec=mincer_spec,
-#                                               execute_additional_tsts=TRUE)
-# result_power_2_fix_hc3_matrix <- create_result_matrix(result_power_2_fix_hc3)
-# write_results_to_txt(name = 'result_power_2_fix_hc3', txt_file = result_txt_file)
-# 
-# 
-# # Power loop 2 without estimated parameters (with HC0)
-# result_power_2_fix_hc0 <- estimation_loop_par(n_loop=n_loop_fix,
-#                                               est_window=est_window,
-#                                               oos_window=oos_window_fix,
-#                                               tolerance_lvl=tolerance_lvl,
-#                                               var_spec_sim=var_spec_sim_power_2,
-#                                               mean_spec_sim=mean_spec_sim_power_2,
-#                                               dist_spec_sim=dist_spec_sim_power_2,
-#                                               fixed_pars_sim=fixed_pars_sim_power_2,
-#                                               estimate=FALSE,
-#                                               var_spec_est=var_spec_est_power_2,
-#                                               mean_spec_est=mean_spec_est_power_2,
-#                                               dist_spec_est=dist_spec_est_power_2,
-#                                               fixed_pars_est=fixed_pars_sim_size,
-#                                               cores=cores,
-#                                               white_adjust='hc0',
-#                                               seed=seed,
-#                                               mincer_spec=mincer_spec,
-#                                               execute_additional_tsts=TRUE)
-# result_power_2_fix_hc0_matrix <- create_result_matrix(result_power_2_fix_hc0)
-# write_results_to_txt(name = 'result_power_2_fix_hc0', txt_file = result_txt_file)
-# 
-# 
-# 
-# # Power loop 3 without estimated parameters
-# result_power_3_fix <- estimation_loop_par(n_loop=n_loop_fix,
-#                                           est_window=est_window,
-#                                           oos_window=oos_window_fix,
-#                                           tolerance_lvl=tolerance_lvl,
-#                                           var_spec_sim=var_spec_sim_power_3,
-#                                           mean_spec_sim=mean_spec_sim_power_3,
-#                                           dist_spec_sim=dist_spec_sim_power_3,
-#                                           fixed_pars_sim=fixed_pars_sim_power_3,
-#                                           estimate=FALSE,
-#                                           var_spec_est=var_spec_est_power_3,
-#                                           mean_spec_est=mean_spec_est_power_3,
-#                                           dist_spec_est=dist_spec_est_power_3,
-#                                           fixed_pars_est=fixed_pars_sim_size,
-#                                           cores=cores,
-#                                           white_adjust=white_adjust,
-#                                           seed=seed,
-#                                           mincer_spec=mincer_spec,
-#                                           execute_additional_tsts=TRUE)
-# result_power_3_fix_matrix <- create_result_matrix(result_power_3_fix)
-# write_results_to_txt(name = 'result_power_3_fix', txt_file = result_txt_file)
-# 
-# # Power loop 3 without estimated parameters (with HC0)
-# result_power_3_fix_hc0 <- estimation_loop_par(n_loop=n_loop_fix,
-#                                               est_window=est_window,
-#                                               oos_window=oos_window_fix,
-#                                               tolerance_lvl=tolerance_lvl,
-#                                               var_spec_sim=var_spec_sim_power_3,
-#                                               mean_spec_sim=mean_spec_sim_power_3,
-#                                               dist_spec_sim=dist_spec_sim_power_3,
-#                                               fixed_pars_sim=fixed_pars_sim_power_3,
-#                                               estimate=FALSE,
-#                                               var_spec_est=var_spec_est_power_3,
-#                                               mean_spec_est=mean_spec_est_power_3,
-#                                               dist_spec_est=dist_spec_est_power_3,
-#                                               fixed_pars_est=fixed_pars_sim_size,
-#                                               cores=cores,
-#                                               white_adjust='hc0',
-#                                               seed=seed,
-#                                               mincer_spec=mincer_spec,
-#                                               execute_additional_tsts=TRUE)
-# result_power_3_fix_hc0_matrix <- create_result_matrix(result_power_3_fix_hc0)
-# write_results_to_txt(name = 'result_power_3_fix_hc0', txt_file = result_txt_file)
-
-
-
-
-
-
-
-
-
-# Size loop with estimated parameters
-# result_size_est <- estimation_loop_par(n_loop=n_loop_est,
-#                                        est_window=est_window,
-#                                        oos_window=oos_window_est,
-#                                        tolerance_lvl=tolerance_lvl,
-#                                        var_spec_sim=var_spec_sim_size,
-#                                        mean_spec_sim=mean_spec_sim_size,
-#                                        dist_spec_sim=dist_spec_sim_size,
-#                                        fixed_pars_sim=fixed_pars_sim_size,
-#                                        estimate=TRUE,
-#                                        var_spec_est=var_spec_est_size,
-#                                        mean_spec_est=mean_spec_est_size,
-#                                        dist_spec_est=dist_spec_est_size,
-#                                        fixed_pars_est=NA,
-#                                        cores=cores,
-#                                        white_adjust=white_adjust,
-#                                        seed=seed,
-#                                        mincer_spec=mincer_spec,
-#                                        execute_additional_tsts=FALSE)
-# result_size_est_matrix <- create_result_matrix(result_size_est)
-
-# Power loop 1 with estimated parameters
-# result_power_1_est <- estimation_loop_par(n_loop=n_loop_est,
-#                                           est_window=est_window,
-#                                           oos_window=oos_window_est,
-#                                           tolerance_lvl=tolerance_lvl,
-#                                           var_spec_sim=var_spec_sim_power_1,
-#                                           mean_spec_sim=mean_spec_sim_power_1,
-#                                           dist_spec_sim=dist_spec_sim_power_1,
-#                                           fixed_pars_sim=fixed_pars_sim_power_1,
-#                                           estimate=TRUE,
-#                                           var_spec_est=var_spec_est_power_1,
-#                                           mean_spec_est=mean_spec_est_power_1,
-#                                           dist_spec_est=dist_spec_est_power_1,
-#                                           fixed_pars_est=NA,
-#                                           cores=cores,
-#                                           white_adjust=white_adjust,
-#                                           seed=seed,
-#                                           mincer_spec=mincer_spec,
-#                                           execute_additional_tsts=FALSE)
-# result_power_1_est_matrix <- create_result_matrix(result_power_1_est)
-
-# Power loop 2 with estimated parameters
-# result_power_2_est <- estimation_loop_par(n_loop=n_loop_est,
-#                                           est_window=est_window,
-#                                           oos_window=oos_window_est,
-#                                           tolerance_lvl=tolerance_lvl,
-#                                           var_spec_sim=var_spec_sim_power_2,
-#                                           mean_spec_sim=mean_spec_sim_power_2,
-#                                           dist_spec_sim=dist_spec_sim_power_2,
-#                                           fixed_pars_sim=fixed_pars_sim_power_2,
-#                                           estimate=TRUE,
-#                                           var_spec_est=var_spec_est_power_2,
-#                                           mean_spec_est=mean_spec_est_power_2,
-#                                           dist_spec_est=dist_spec_est_power_2,
-#                                           fixed_pars_est=NA,
-#                                           cores=cores,
-#                                           white_adjust=white_adjust,
-#                                           seed=seed,
-#                                           mincer_spec=mincer_spec,
-#                                           execute_additional_tsts=FALSE)
-# result_power_2_est_matrix <- create_result_matrix(result_power_2_est)
+rm(result_lst, result_matrix, i)

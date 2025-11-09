@@ -1,7 +1,6 @@
 other/
 results/
-text/
-results.txt
-results_latex.txt
+run_logs/
 
 .Rproj.user
+tikzMetricsDictionary
